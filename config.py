@@ -2,16 +2,27 @@ import os
 
 path = os.getcwd()
 
+
+def get_database_url():
+    url = os.getenv("DATABASE_URL")
+
+    if url and url.startswith("mysql://"):
+        url = url.replace("mysql://", "mysql+pymysql://", 1)
+
+    return url
+
+
 class BaseConfig(object):
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
-    MAIL_SERVER = os.getenv("MAIL_SERVER", "localhost")
-    MAIL_PORT = int(os.getenv("MAIL_PORT", 1025))
-    MAIL_USERNAME = os.getenv("MAIL_USERNAME", "support@chatbot.com")
-    MAIL_PASSWORD = os.getenv("MAIL_PASSWORD", "")
+    MAIL_SERVER = "localhost"
+    MAIL_PORT = 1025
+    MAIL_USERNAME = "support@chatbot.com"
+    MAIL_PASSWORD = ""
 
     MAX_CONTENT_LENGTH = 4 * 1024 * 1024
+
     PROFILE_DIR = os.path.join(path, "app/static/uploads/profiles")
 
 
@@ -28,10 +39,8 @@ class DevelopmentConfig(BaseConfig):
         "DATABASE_URL",
         "mysql+pymysql://root:Ronishamdr12!@localhost/tickette"
     )
-    SQLALCHEMY_TRACK_MODIFICATIONS = False
 
 
 class ProductionConfig(BaseConfig):
     DEBUG = False
-    SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL")
-    SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SQLALCHEMY_DATABASE_URI = get_database_url()
