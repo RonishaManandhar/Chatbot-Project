@@ -3,7 +3,7 @@ import os
 path = os.getcwd()
 
 class BaseConfig(object):
-    SECRET_KEY = os.getenv("SECRET_KEY")
+    SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     MAIL_SERVER = os.getenv("MAIL_SERVER", "localhost")
@@ -25,10 +25,13 @@ class TestConfig(BaseConfig):
 class DevelopmentConfig(BaseConfig):
     DEBUG = True
     SQLALCHEMY_DATABASE_URI = os.getenv(
-        "DATABASE_URL"
+        "DATABASE_URL",
+        "mysql+pymysql://root:Ronishamdr12!@localhost/tickette"
     )
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
 
 
 class ProductionConfig(BaseConfig):
     DEBUG = False
     SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL")
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
