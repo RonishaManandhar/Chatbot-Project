@@ -1,0 +1,213 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}Chatbot Performance{% endblock %}
+{% endblock %}
+
+{% block text %}
+Monitor chatbot success rates, escalation trends, AI usage, FAQ performance, and learning effectiveness.
+{% endblock %}
+
+{% block content %}
+
+<div class="content-box content-lighten">
+
+    <h4 class="mb-4">
+        Chatbot Performance
+    </h4>
+
+    <div class="row">
+
+        <div class="col-md-3 mb-3">
+            <div class="card border-primary">
+                <div class="card-body text-center">
+                    <h2>{{ total_ai_messages }}</h2>
+                    <h6>AI Responses</h6>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-3">
+            <div class="card border-success">
+                <div class="card-body text-center">
+                    <h2>{{ success_rate }}%</h2>
+                    <h6>Success Rate</h6>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-3">
+            <div class="card border-warning">
+                <div class="card-body text-center">
+                    <h2>{{ escalation_rate }}%</h2>
+                    <h6>Escalation Rate</h6>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-3">
+            <div class="card border-info">
+                <div class="card-body text-center">
+                    <h2>{{ faq_matches }}</h2>
+                    <h6>FAQ Matches</h6>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+</div>
+
+<div class="content-box content-lighten mt-4">
+
+    <div class="row">
+
+        <div class="col-md-6 mb-4">
+
+            <div class="card">
+                <div class="card-body">
+
+                    <h6 class="text-center mb-3">
+                        Resolution Outcomes
+                    </h6>
+
+                    <canvas id="resolutionChart"></canvas>
+
+                </div>
+            </div>
+
+        </div>
+
+        <div class="col-md-6 mb-4">
+
+            <div class="card">
+                <div class="card-body">
+
+                    <h6 class="text-center mb-3">
+                        Review Status
+                    </h6>
+
+                    <canvas id="reviewChart"></canvas>
+
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+<div class="content-box content-lighten mt-4">
+
+    <h5 class="mb-3">
+        Performance Summary
+    </h5>
+
+    <div class="table-responsive">
+
+        <table class="table table-striped">
+
+            <tbody>
+
+                <tr>
+                    <th>Total Messages</th>
+                    <td>{{ total_messages }}</td>
+                </tr>
+
+                <tr>
+                    <th>Total AI Responses</th>
+                    <td>{{ total_ai_messages }}</td>
+                </tr>
+
+                <tr>
+                    <th>FAQ Matches</th>
+                    <td>{{ faq_matches }}</td>
+                </tr>
+
+                <tr>
+                    <th>Solved</th>
+                    <td>{{ solved_count }}</td>
+                </tr>
+
+                <tr>
+                    <th>Not Solved</th>
+                    <td>{{ not_solved_count }}</td>
+                </tr>
+
+                <tr>
+                    <th>Pending Feedback</th>
+                    <td>{{ pending_count }}</td>
+                </tr>
+
+                <tr>
+                    <th>Escalated</th>
+                    <td>{{ escalated_count }}</td>
+                </tr>
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+
+const resolutionChart = document.getElementById('resolutionChart');
+
+new Chart(resolutionChart, {
+    type: 'doughnut',
+    data: {
+        labels: [
+            'Solved',
+            'Not Solved',
+            'Pending',
+            'Escalated'
+        ],
+        datasets: [{
+            data: [
+                {{ solved_count }},
+                {{ not_solved_count }},
+                {{ pending_count }},
+                {{ escalated_count }}
+            ]
+        }]
+    }
+});
+
+const reviewChart = document.getElementById('reviewChart');
+
+new Chart(reviewChart, {
+    type: 'bar',
+    data: {
+        labels: [
+            'Approved',
+            'Rejected',
+            'Saved FAQ'
+        ],
+        datasets: [{
+            label: 'Reviews',
+            data: [
+                {{ approved_count }},
+                {{ rejected_count }},
+                {{ saved_faq_count }}
+            ]
+        }]
+    },
+    options: {
+        responsive: true,
+        scales: {
+            y: {
+                beginAtZero: true
+            }
+        }
+    }
+});
+
+</script>
+
+{% endblock %}

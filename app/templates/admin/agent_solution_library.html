@@ -1,0 +1,332 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}Agent Solution Library{% endblock %}
+{% endblock %}
+
+{% block text %}
+Review reusable support solutions submitted by agents and convert useful solutions into knowledge content.
+{% endblock %}
+
+{% block content %}
+
+<div class="max-w-1000">
+    {% include 'includes/alert.html' %}
+</div>
+
+<div class="content-box content-lighten">
+
+    <div class="d-flex justify-content-between flex-wrap mb-3">
+        <h4 class="mb-2">Agent Solution Library</h4>
+
+        <div>
+            <a href="{{ url_for('admin.knowledge_articles') }}"
+               class="btn btn-primary btn-sm">
+                Knowledge Articles
+            </a>
+        </div>
+    </div>
+
+    <div class="row">
+
+        <div class="col-md-3 mb-3">
+            <div class="card border-primary">
+                <div class="card-body text-center">
+                    <h3>{{ total_solutions }}</h3>
+                    <small>Total Solutions</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-3">
+            <div class="card border-warning">
+                <div class="card-body text-center">
+                    <h3>{{ pending_count }}</h3>
+                    <small>Pending Review</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-3">
+            <div class="card border-success">
+                <div class="card-body text-center">
+                    <h3>{{ approved_count }}</h3>
+                    <small>Approved</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-3">
+            <div class="card border-danger">
+                <div class="card-body text-center">
+                    <h3>{{ rejected_count }}</h3>
+                    <small>Rejected</small>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+</div>
+
+<div class="content-box content-lighten mt-4">
+
+    <form method="GET" class="row mb-3">
+
+        <div class="col-md-4 mb-2">
+            <select name="status" class="form-control">
+                <option value="">All Statuses</option>
+
+                <option value="Pending" {% if selected_status=="Pending" %}selected{% endif %}>
+                    Pending
+                </option>
+
+                <option value="Approved" {% if selected_status=="Approved" %}selected{% endif %}>
+                    Approved
+                </option>
+
+                <option value="Rejected" {% if selected_status=="Rejected" %}selected{% endif %}>
+                    Rejected
+                </option>
+            </select>
+        </div>
+
+        <div class="col-md-4 mb-2">
+            <select name="category_id" class="form-control">
+                <option value="">All Categories</option>
+
+                {% for category in categories %}
+                <option value="{{ category.id }}"
+                        {% if selected_category_id==category.id %}selected{% endif %}>
+                    {{ category.category }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="col-md-4 mb-2">
+            <button type="submit" class="btn btn-primary">
+                Filter
+            </button>
+
+            <a href="{{ url_for('admin.agent_solution_library') }}"
+               class="btn btn-secondary">
+                Reset
+            </a>
+        </div>
+
+    </form>
+
+    {% if solutions %}
+
+    <div class="table-responsive">
+
+        <table class="table table-striped table-borderless">
+
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Category</th>
+                    <th>Submitted By</th>
+                    <th>Status</th>
+                    <th>Views</th>
+                    <th>Reuse</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+
+            <tbody>
+
+                {% for solution in solutions %}
+
+                <tr>
+
+                    <td style="max-width:220px; white-space:normal;">
+                        <strong>{{ solution.title }}</strong>
+                        <br>
+                        <small class="text-muted">
+                            {{ solution.solution[:90] }}{% if solution.solution|length > 90 %}...{% endif %}
+                        </small>
+                    </td>
+
+                    <td>
+                        {{ solution.category.category if solution.category else "Uncategorised" }}
+                    </td>
+
+                    <td>
+                        {{ solution.submitted_by.name if solution.submitted_by else "Unknown" }}
+                    </td>
+
+                    <td>
+                        {% if solution.status == "Approved" %}
+                        <span class="badge badge-success">Approved</span>
+                        {% elif solution.status == "Rejected" %}
+                        <span class="badge badge-danger">Rejected</span>
+                        {% else %}
+                        <span class="badge badge-warning">Pending</span>
+                        {% endif %}
+                    </td>
+
+                    <td>
+                        <span class="badge badge-primary">
+                            {{ solution.view_count }}
+                        </span>
+                    </td>
+
+                    <td>
+                        <span class="badge badge-info">
+                            {{ solution.reuse_count }}
+                        </span>
+                    </td>
+
+                    <td>
+                        {{ solution.created_at.strftime('%d %b %Y') if solution.created_at else "-" }}
+                    </td>
+
+                    <td>
+
+                        <button type="button"
+                                class="btn btn-info btn-sm mb-1"
+                                data-toggle="modal"
+                                data-target="#viewSolutionModal{{ solution.id }}">
+                            View
+                        </button>
+
+                        {% if solution.status != "Approved" %}
+                        <form action="{{ url_for('admin.approve_agent_solution', id=solution.id) }}"
+                              method="POST"
+                              style="display:inline;">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-success btn-sm mb-1">
+                                Approve
+                            </button>
+                        </form>
+                        {% endif %}
+
+                        {% if solution.status != "Rejected" %}
+                        <form action="{{ url_for('admin.reject_agent_solution', id=solution.id) }}"
+                              method="POST"
+                              style="display:inline;">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-warning btn-sm mb-1">
+                                Reject
+                            </button>
+                        </form>
+                        {% endif %}
+
+                        <form action="{{ url_for('admin.delete_agent_solution', id=solution.id) }}"
+                              method="POST"
+                              style="display:inline;"
+                              onsubmit="return confirm('Delete this solution?');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-danger btn-sm mb-1">
+                                Delete
+                            </button>
+                        </form>
+
+                    </td>
+
+                </tr>
+
+                {% endfor %}
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+    {% else %}
+
+    <div class="text-center py-5">
+        <h5>No agent solutions found</h5>
+        <p class="text-muted mb-0">
+            Agent-submitted reusable solutions will appear here.
+        </p>
+    </div>
+
+    {% endif %}
+
+</div>
+
+{% for solution in solutions %}
+
+<div class="modal fade"
+     id="viewSolutionModal{{ solution.id }}"
+     tabindex="-1">
+
+    <div class="modal-dialog modal-lg">
+
+        <div class="modal-content">
+
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    {{ solution.title }}
+                </h5>
+
+                <button type="button"
+                        class="close"
+                        data-dismiss="modal">
+                    <span>&times;</span>
+                </button>
+            </div>
+
+            <div class="modal-body">
+
+                <p>
+                    <strong>Category:</strong>
+                    {{ solution.category.category if solution.category else "Uncategorised" }}
+                </p>
+
+                <p>
+                    <strong>Submitted By:</strong>
+                    {{ solution.submitted_by.name if solution.submitted_by else "Unknown" }}
+                </p>
+
+                <p>
+                    <strong>Status:</strong>
+                    {{ solution.status }}
+                </p>
+
+                <p>
+                    <strong>Tags:</strong>
+                    {{ solution.tags or "-" }}
+                </p>
+
+                {% if solution.ticket %}
+                <p>
+                    <strong>Linked Ticket:</strong>
+                    #{{ solution.ticket.number }}
+                </p>
+                {% endif %}
+
+                <hr>
+
+                <h6>Solution</h6>
+
+                <p style="white-space: pre-line;">
+                    {{ solution.solution }}
+                </p>
+
+            </div>
+
+            <div class="modal-footer">
+
+                <button type="button"
+                        class="btn btn-secondary"
+                        data-dismiss="modal">
+                    Close
+                </button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endfor %}
+
+{% endblock %}

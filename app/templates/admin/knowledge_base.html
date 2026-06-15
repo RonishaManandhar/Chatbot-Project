@@ -1,0 +1,246 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}Knowledge Base{% endblock %}
+{% endblock %}
+
+{% block text %}
+    Manage chatbot FAQs, support answers, and AI knowledge.
+{% endblock %}
+
+{% block button %}
+
+<button class="btn btn-primary btn-sm"
+        data-toggle="modal"
+        data-target="#createFAQModal">
+
+    Add FAQ
+
+</button>
+
+{% endblock %}
+
+{% block content %}
+
+<div class="max-w-1000">
+    {% include 'includes/alert.html' %}
+</div>
+
+<div class="content-box content-lighten max-w-1000">
+
+    {% if faqs %}
+
+    <table class="table table-striped table-borderless">
+
+        <thead>
+
+            <tr>
+                <th>Question</th>
+                <th>Category</th>
+                <th>Tags</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Actions</th>
+            </tr>
+
+        </thead>
+
+        <tbody>
+
+            {% for faq in faqs %}
+
+            <tr>
+
+                <td>
+
+                    <strong>{{ faq.question }}</strong>
+
+                    <br>
+
+                    <small class="text-muted">
+                        {{ faq.answer[:120] }}
+                    </small>
+
+                </td>
+
+                <td>
+                    {% if faq.category %}
+                    {{ faq.category.category }}
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+
+                <td>
+                    {{ faq.tags }}
+                </td>
+
+                <td>
+
+                    {% if faq.is_active %}
+
+                    <span class="badge badge-success">
+                        Active
+                    </span>
+
+                    {% else %}
+
+                    <span class="badge badge-secondary">
+                        Disabled
+                    </span>
+
+                    {% endif %}
+
+                </td>
+
+                <td>
+                    {{ faq.created_at.strftime('%d %b %Y') }}
+                </td>
+
+                <td>
+
+                    <a href="{{ url_for('admin.toggle_faq', id=faq.id) }}"
+                       class="btn btn-warning btn-sm">
+
+                        {% if faq.is_active %}
+                        Disable
+                        {% else %}
+                        Enable
+                        {% endif %}
+
+                    </a>
+
+                    <form action="{{ url_for('admin.delete_faq', id=faq.id) }}"
+                          method="POST"
+                          style="display:inline;">
+
+                        <input type="hidden"
+                               name="csrf_token"
+                               value="{{ csrf_token() }}">
+
+                        <button type="submit"
+                                class="btn btn-danger btn-sm">
+
+                            Delete
+
+                        </button>
+
+                    </form>
+
+                </td>
+
+            </tr>
+
+            {% endfor %}
+
+        </tbody>
+
+    </table>
+
+    {% else %}
+
+    <div class="text-center py-5">
+
+        <h5>No FAQs yet</h5>
+
+        <p class="text-muted mb-0">
+            Create your first AI knowledge entry.
+        </p>
+
+    </div>
+
+    {% endif %}
+
+</div>
+
+<!-- MODAL -->
+
+<div class="modal fade"
+     id="createFAQModal"
+     tabindex="-1">
+
+    <div class="modal-dialog">
+
+        <div class="modal-content">
+
+            <div class="modal-header">
+
+                <h5 class="modal-title">
+                    Create FAQ
+                </h5>
+
+                <button type="button"
+                        class="close"
+                        data-dismiss="modal">
+
+                    <span>&times;</span>
+
+                </button>
+
+            </div>
+
+            <div class="modal-body">
+
+                <form action="{{ url_for('admin.knowledge_base') }}"
+                      method="POST">
+
+                    {{ form.csrf_token }}
+
+                    <div class="form-group">
+
+                        <label>
+                            Question
+                        </label>
+
+                        {{ form.question(class="form-control") }}
+
+                    </div>
+
+                    <div class="form-group">
+
+                        <label>
+                            Answer
+                        </label>
+
+                        {{ form.answer(class="form-control", rows="5") }}
+
+                    </div>
+
+                    <div class="form-group">
+
+                        <label>
+                            FAQ Category
+                        </label>
+
+                        {{ form.category(class="form-control") }}
+
+                    </div>
+
+                    <div class="form-group">
+
+                        <label>
+                            Tags
+                        </label>
+
+                        {{ form.tags(class="form-control") }}
+
+                    </div>
+
+                    <button type="submit"
+                            class="btn btn-primary">
+
+                        Create FAQ
+
+                    </button>
+
+                </form>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endblock %}

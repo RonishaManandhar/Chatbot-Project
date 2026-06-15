@@ -1,0 +1,109 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}Agent Performance{% endblock %}
+{% endblock %}
+
+{% block text %}
+    Monitor support agent workload, escalation count, and ticket handling performance.
+{% endblock %}
+
+{% block content %}
+
+<style>
+    .performance-box {
+        background: white;
+        border-radius: 14px;
+        padding: 20px;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.05);
+    }
+
+    .metric-badge {
+        padding: 6px 10px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+</style>
+
+<div class="max-w-1000">
+
+    <div class="performance-box">
+
+        {% if performance %}
+
+        <table class="table table-striped table-borderless table-responsive-sm">
+
+            <thead>
+                <tr>
+                    <th>Agent</th>
+                    <th>Assigned</th>
+                    <th>Open</th>
+                    <th>Pending</th>
+                    <th>Solved</th>
+                    <th>Closed</th>
+                    <th>Escalated</th>
+                    <th>Avg Handling Time</th>
+                </tr>
+            </thead>
+
+            <tbody>
+
+                {% for row in performance %}
+
+                <tr>
+                    <td>
+                        <strong>{{ row.agent.name }}</strong>
+                        <br>
+                        <small class="text-muted">{{ row.agent.email }}</small>
+                    </td>
+
+                    <td>{{ row.assigned }}</td>
+
+                    <td>
+                        <span class="badge badge-primary">{{ row.open }}</span>
+                    </td>
+
+                    <td>
+                        <span class="badge badge-warning">{{ row.pending }}</span>
+                    </td>
+
+                    <td>
+                        <span class="badge badge-success">{{ row.solved }}</span>
+                    </td>
+
+                    <td>
+                        <span class="badge badge-dark">{{ row.closed }}</span>
+                    </td>
+
+                    <td>
+                        <span class="badge badge-danger">{{ row.escalated }}</span>
+                    </td>
+
+                    <td>
+                        {{ row.avg_hours }} hrs
+                    </td>
+                </tr>
+
+                {% endfor %}
+
+            </tbody>
+
+        </table>
+
+        {% else %}
+
+        <div class="text-center py-5">
+            <h5>No agent data found</h5>
+            <p class="text-muted mb-0">
+                Agent performance will appear after tickets are assigned.
+            </p>
+        </div>
+
+        {% endif %}
+
+    </div>
+
+</div>
+
+{% endblock %}

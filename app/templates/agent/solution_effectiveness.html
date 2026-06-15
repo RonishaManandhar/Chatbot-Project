@@ -1,0 +1,309 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}Solution Effectiveness{% endblock %}
+{% endblock %}
+
+{% block text %}
+Measure how useful your submitted solutions are based on approval, views, and reuse.
+{% endblock %}
+
+{% block content %}
+
+<div class="max-w-1000">
+    {% include 'includes/alert.html' %}
+</div>
+
+<style>
+    .effectiveness-hero {
+        background: linear-gradient(135deg, #f8fafc, #ffffff);
+        border: 1px solid #e5e7eb;
+        border-radius: 20px;
+        padding: 30px;
+        margin-bottom: 24px;
+        box-shadow: 0 8px 22px rgba(0,0,0,0.05);
+    }
+
+    .score-circle {
+        width: 150px;
+        height: 150px;
+        border-radius: 50%;
+        border: 12px solid #007bff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: auto;
+        background: #ffffff;
+    }
+
+        .score-circle h1 {
+            margin: 0;
+            font-weight: 800;
+        }
+
+    .mini-metric {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 16px;
+        padding: 18px;
+        text-align: center;
+        height: 100%;
+    }
+
+    .rank-panel {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 18px;
+        padding: 22px;
+        height: 100%;
+        box-shadow: 0 5px 16px rgba(0,0,0,0.04);
+    }
+
+    .rank-item {
+        border-bottom: 1px solid #f3f4f6;
+        padding: 14px 0;
+    }
+
+        .rank-item:last-child {
+            border-bottom: 0;
+        }
+
+    .rank-number {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: #f1f5f9;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        margin-right: 10px;
+    }
+
+    .tip-box {
+        background: #fff;
+        border-left: 5px solid #28a745;
+        border-radius: 14px;
+        padding: 20px;
+        margin-bottom: 14px;
+        box-shadow: 0 5px 14px rgba(0,0,0,0.04);
+    }
+</style>
+
+<div class="effectiveness-hero">
+
+    <div class="row align-items-center">
+
+        <div class="col-md-8">
+
+            <h3 class="mb-2">
+                Solution Effectiveness Overview
+            </h3>
+
+            <p class="text-muted mb-3">
+                This score shows how useful your submitted solutions are based on approval status,
+                total views, and how often your solutions are reused.
+            </p>
+
+            {% if effectiveness_score >= 80 %}
+            <span class="badge badge-success p-2">Highly Effective</span>
+            {% elif effectiveness_score >= 50 %}
+            <span class="badge badge-primary p-2">Effective</span>
+            {% elif effectiveness_score >= 20 %}
+            <span class="badge badge-warning p-2">Developing</span>
+            {% else %}
+            <span class="badge badge-secondary p-2">Needs More Data</span>
+            {% endif %}
+
+        </div>
+
+        <div class="col-md-4 text-center">
+
+            <div class="score-circle">
+                <h1>{{ effectiveness_score }}%</h1>
+            </div>
+
+            <small class="text-muted d-block mt-2">
+                Effectiveness Score
+            </small>
+
+        </div>
+
+    </div>
+
+</div>
+
+<div class="row mb-4">
+
+    <div class="col-md-3 mb-3">
+        <div class="mini-metric">
+            <h2>{{ total_solutions }}</h2>
+            <small>Total Solutions</small>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-3">
+        <div class="mini-metric">
+            <h2>{{ approved_count }}</h2>
+            <small>Approved</small>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-3">
+        <div class="mini-metric">
+            <h2>{{ total_views }}</h2>
+            <small>Total Views</small>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-3">
+        <div class="mini-metric">
+            <h2>{{ total_reuse }}</h2>
+            <small>Total Reuse</small>
+        </div>
+    </div>
+
+</div>
+
+<div class="row">
+
+    <div class="col-md-6 mb-4">
+
+        <div class="rank-panel">
+
+            <h5 class="mb-3">
+                Most Viewed Solutions
+            </h5>
+
+            {% if most_viewed %}
+
+            {% for solution in most_viewed %}
+
+            <div class="rank-item">
+
+                <div class="d-flex justify-content-between align-items-start">
+
+                    <div>
+                        <span class="rank-number">
+                            {{ loop.index }}
+                        </span>
+
+                        <strong>
+                            {{ solution.title }}
+                        </strong>
+
+                        <br>
+
+                        <small class="text-muted">
+                            {{ solution.category.category if solution.category else "Uncategorised" }}
+                        </small>
+                    </div>
+
+                    <span class="badge badge-primary">
+                        {{ solution.view_count }} views
+                    </span>
+
+                </div>
+
+            </div>
+
+            {% endfor %}
+
+            {% else %}
+
+            <p class="text-muted mb-0">
+                No viewed solutions yet.
+            </p>
+
+            {% endif %}
+
+        </div>
+
+    </div>
+
+    <div class="col-md-6 mb-4">
+
+        <div class="rank-panel">
+
+            <h5 class="mb-3">
+                Most Reused Solutions
+            </h5>
+
+            {% if most_reused %}
+
+            {% for solution in most_reused %}
+
+            <div class="rank-item">
+
+                <div class="d-flex justify-content-between align-items-start">
+
+                    <div>
+                        <span class="rank-number">
+                            {{ loop.index }}
+                        </span>
+
+                        <strong>
+                            {{ solution.title }}
+                        </strong>
+
+                        <br>
+
+                        <small class="text-muted">
+                            {{ solution.category.category if solution.category else "Uncategorised" }}
+                        </small>
+                    </div>
+
+                    <span class="badge badge-info">
+                        {{ solution.reuse_count }} reuse
+                    </span>
+
+                </div>
+
+            </div>
+
+            {% endfor %}
+
+            {% else %}
+
+            <p class="text-muted mb-0">
+                No reused solutions yet.
+            </p>
+
+            {% endif %}
+
+        </div>
+
+    </div>
+
+</div>
+
+<div class="content-box content-lighten mt-4">
+
+    <h5 class="mb-3">
+        Improvement Tips
+    </h5>
+
+    <div class="tip-box">
+        <strong>Write clear step-by-step solutions.</strong>
+        <p class="text-muted mb-0">
+            Solutions with clear steps are easier for other agents to reuse.
+        </p>
+    </div>
+
+    <div class="tip-box">
+        <strong>Add useful tags.</strong>
+        <p class="text-muted mb-0">
+            Tags help agents find your solutions faster during customer support.
+        </p>
+    </div>
+
+    <div class="tip-box">
+        <strong>Submit solutions from real closed tickets.</strong>
+        <p class="text-muted mb-0">
+            Real ticket-based solutions are more likely to be approved and reused.
+        </p>
+    </div>
+
+</div>
+
+{% endblock %}

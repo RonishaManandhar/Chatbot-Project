@@ -1,0 +1,293 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}Agent Reports{% endblock %}
+{% endblock %}
+
+{% block text %}
+    Review incident logs, issue logs, and internal reports submitted by support agents.
+{% endblock %}
+
+{% block content %}
+
+<style>
+    .report-summary {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 14px;
+        margin-bottom: 18px;
+    }
+
+    .summary-box {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        padding: 16px;
+        box-shadow: 0 5px 16px rgba(0,0,0,0.05);
+    }
+
+    .summary-number {
+        font-size: 28px;
+        font-weight: 800;
+        color: #111827;
+        margin-bottom: 2px;
+    }
+
+    .summary-label {
+        color: #6b7280;
+        font-size: 13px;
+        margin-bottom: 0;
+    }
+
+    .filter-box {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        padding: 16px;
+        margin-bottom: 18px;
+    }
+
+    .report-card {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 16px;
+        padding: 18px;
+        margin-bottom: 14px;
+        box-shadow: 0 5px 16px rgba(0,0,0,0.05);
+    }
+
+    .report-title {
+        font-weight: 800;
+        color: #111827;
+        margin-bottom: 5px;
+    }
+
+    .report-meta {
+        font-size: 13px;
+        color: #6b7280;
+        margin-bottom: 10px;
+    }
+
+    .report-description {
+        color: #374151;
+        font-size: 14px;
+        margin-bottom: 12px;
+        white-space: pre-wrap;
+    }
+
+    .pill {
+        display: inline-block;
+        border-radius: 999px;
+        padding: 5px 10px;
+        font-size: 12px;
+        font-weight: 700;
+        margin-right: 5px;
+        margin-bottom: 5px;
+    }
+
+    .pill-type {
+        background: #dbeafe;
+        color: #1d4ed8;
+    }
+
+    .pill-severity {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .pill-category {
+        background: #f3f4f6;
+        color: #374151;
+    }
+
+    .pill-open {
+        background: #dbeafe;
+        color: #1d4ed8;
+    }
+
+    .pill-progress {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .pill-resolved {
+        background: #dcfce7;
+        color: #166534;
+    }
+
+    .pill-closed {
+        background: #e5e7eb;
+        color: #374151;
+    }
+
+    .report-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+        margin-top: 12px;
+    }
+
+    .empty-box {
+        text-align: center;
+        padding: 36px;
+        border: 1px dashed #d1d5db;
+        border-radius: 14px;
+        color: #6b7280;
+        background: #f9fafb;
+    }
+</style>
+
+<div class="max-w-1000">
+
+    {% include 'includes/alert.html' %}
+
+    <div class="report-summary">
+        <div class="summary-box">
+            <div class="summary-number">{{ reports|length }}</div>
+            <p class="summary-label">Filtered Reports</p>
+        </div>
+
+        <div class="summary-box">
+            <div class="summary-number">{{ open_report_count }}</div>
+            <p class="summary-label">Open / Active Reports</p>
+        </div>
+    </div>
+
+    <div class="filter-box">
+        <form method="GET" class="row">
+
+            <div class="col-md-3 mb-2">
+                <label>Type</label>
+                <select name="type" class="form-control">
+                    <option value="">All Types</option>
+                    <option value="Incident" {% if selected_type=='Incident' %}selected{% endif %}>Incident</option>
+                    <option value="Issue" {% if selected_type=='Issue' %}selected{% endif %}>Issue</option>
+                    <option value="Internal" {% if selected_type=='Internal' %}selected{% endif %}>Internal</option>
+                </select>
+            </div>
+
+            <div class="col-md-3 mb-2">
+                <label>Severity</label>
+                <select name="severity" class="form-control">
+                    <option value="">All Severities</option>
+                    <option value="Low" {% if selected_severity=='Low' %}selected{% endif %}>Low</option>
+                    <option value="Medium" {% if selected_severity=='Medium' %}selected{% endif %}>Medium</option>
+                    <option value="High" {% if selected_severity=='High' %}selected{% endif %}>High</option>
+                    <option value="Urgent" {% if selected_severity=='Urgent' %}selected{% endif %}>Urgent</option>
+                </select>
+            </div>
+
+            <div class="col-md-3 mb-2">
+                <label>Status</label>
+                <select name="status" class="form-control">
+                    <option value="">All Statuses</option>
+                    <option value="Open" {% if selected_status=='Open' %}selected{% endif %}>Open</option>
+                    <option value="In Progress" {% if selected_status=='In Progress' %}selected{% endif %}>In Progress</option>
+                    <option value="Resolved" {% if selected_status=='Resolved' %}selected{% endif %}>Resolved</option>
+                    <option value="Closed" {% if selected_status=='Closed' %}selected{% endif %}>Closed</option>
+                </select>
+            </div>
+
+            <div class="col-md-3 mb-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-dark btn-block">
+                    Filter
+                </button>
+            </div>
+
+        </form>
+    </div>
+
+    {% if reports %}
+
+    {% for report in reports %}
+
+    <div class="report-card">
+
+        <div class="report-title">
+            #{{ report.id }} - {{ report.title }}
+        </div>
+
+        <div class="report-meta">
+            Submitted by <strong>{{ report.reported_by.name }}</strong>
+            |
+            {{ report.created_at.strftime('%d %b %Y, %H:%M') }}
+        </div>
+
+        <div class="mb-2">
+            <span class="pill pill-type">{{ report.report_type }}</span>
+            <span class="pill pill-category">{{ report.category }}</span>
+            <span class="pill pill-severity">{{ report.severity }}</span>
+
+            {% if report.status == 'Open' %}
+            <span class="pill pill-open">Open</span>
+            {% elif report.status == 'In Progress' %}
+            <span class="pill pill-progress">In Progress</span>
+            {% elif report.status == 'Resolved' %}
+            <span class="pill pill-resolved">Resolved</span>
+            {% else %}
+            <span class="pill pill-closed">{{ report.status }}</span>
+            {% endif %}
+        </div>
+
+        <div class="report-description">
+            {{ report.description }}
+        </div>
+
+        <div class="report-actions">
+
+            {% if report.file_link %}
+            <a href="{{ url_for('admin.download_agent_report_attachment', filename=report.file_link) }}"
+               class="btn btn-outline-primary btn-sm">
+                Download Attachment
+            </a>
+            {% endif %}
+
+            <form action="{{ url_for('admin.agent_reports') }}"
+                  method="POST"
+                  class="form-inline">
+
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="report_id" value="{{ report.id }}">
+
+                <select name="status" class="form-control form-control-sm mr-2">
+                    <option value="Open" {% if report.status=='Open' %}selected{% endif %}>Open</option>
+                    <option value="In Progress" {% if report.status=='In Progress' %}selected{% endif %}>In Progress</option>
+                    <option value="Resolved" {% if report.status=='Resolved' %}selected{% endif %}>Resolved</option>
+                    <option value="Closed" {% if report.status=='Closed' %}selected{% endif %}>Closed</option>
+                </select>
+
+                <button type="submit" class="btn btn-success btn-sm">
+                    Update Status
+                </button>
+
+            </form>
+            <form action="{{ url_for('admin.delete_agent_report', id=report.id) }}"
+                  method="POST"
+                  onsubmit="return confirm('Are you sure you want to delete this agent report? This cannot be undone.');">
+
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                <button type="submit" class="btn btn-danger btn-sm">
+                    Delete Report
+                </button>
+
+            </form>
+
+        </div>
+
+    </div>
+
+    {% endfor %}
+
+    {% else %}
+
+    <div class="empty-box">
+        No agent reports found.
+    </div>
+
+    {% endif %}
+
+</div>
+
+{% endblock %}

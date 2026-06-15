@@ -1,0 +1,180 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}Knowledge Contributions{% endblock %}
+{% endblock %}
+
+{% block text %}
+View your knowledge submissions as a contribution timeline.
+{% endblock %}
+
+{% block content %}
+
+<div class="max-w-1000">
+    {% include 'includes/alert.html' %}
+</div>
+
+<style>
+    .portfolio-header {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 20px;
+        padding: 26px;
+        margin-bottom: 24px;
+        box-shadow: 0 6px 18px rgba(0,0,0,0.05);
+    }
+
+    .status-pill {
+        display: inline-block;
+        padding: 10px 16px;
+        border-radius: 24px;
+        margin-right: 8px;
+        margin-bottom: 8px;
+        background: #f8fafc;
+        border: 1px solid #e5e7eb;
+    }
+
+    .contribution-card {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 18px;
+        padding: 22px;
+        margin-bottom: 16px;
+        box-shadow: 0 5px 14px rgba(0,0,0,0.04);
+        position: relative;
+    }
+
+        .contribution-card:before {
+            content: "";
+            position: absolute;
+            left: -8px;
+            top: 22px;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #007bff;
+        }
+
+    .contribution-list {
+        border-left: 3px solid #e5e7eb;
+        padding-left: 24px;
+        margin-left: 8px;
+    }
+
+    .meta-line {
+        color: #6b7280;
+        font-size: 13px;
+    }
+</style>
+
+<div class="portfolio-header">
+
+    <h4 class="mb-2">
+        My Knowledge Contribution Portfolio
+    </h4>
+
+    <p class="text-muted">
+        This page shows all reusable solutions you have submitted for the knowledge library.
+    </p>
+
+    <div>
+        <span class="status-pill">
+            Approved: <strong>{{ approved_count }}</strong>
+        </span>
+
+        <span class="status-pill">
+            Pending: <strong>{{ pending_count }}</strong>
+        </span>
+
+        <span class="status-pill">
+            Rejected: <strong>{{ rejected_count }}</strong>
+        </span>
+    </div>
+
+</div>
+
+<div class="content-box content-lighten">
+
+    <h5 class="mb-4">
+        Contribution Timeline
+    </h5>
+
+    {% if solutions %}
+
+    <div class="contribution-list">
+
+        {% for solution in solutions %}
+
+        <div class="contribution-card">
+
+            <div class="d-flex justify-content-between flex-wrap">
+
+                <div>
+                    <h5 class="mb-1">
+                        {{ solution.title }}
+                    </h5>
+
+                    <div class="meta-line">
+                        {{ solution.category.category if solution.category else "Uncategorised" }}
+                        |
+                        {{ solution.created_at.strftime('%d %b %Y') if solution.created_at else "-" }}
+                    </div>
+                </div>
+
+                <div>
+                    {% if solution.status == "Approved" %}
+                    <span class="badge badge-success">Approved</span>
+                    {% elif solution.status == "Rejected" %}
+                    <span class="badge badge-danger">Rejected</span>
+                    {% else %}
+                    <span class="badge badge-warning">Pending</span>
+                    {% endif %}
+                </div>
+
+            </div>
+
+            <p class="text-muted mt-3">
+                {{ solution.solution[:220] }}{% if solution.solution|length > 220 %}...{% endif %}
+            </p>
+
+            <div>
+                <span class="badge badge-primary">
+                    {{ solution.view_count }} views
+                </span>
+
+                <span class="badge badge-info">
+                    {{ solution.reuse_count }} reuse
+                </span>
+
+                {% if solution.tags %}
+                <span class="badge badge-secondary">
+                    {{ solution.tags }}
+                </span>
+                {% endif %}
+            </div>
+
+        </div>
+
+        {% endfor %}
+
+    </div>
+
+    {% else %}
+
+    <div class="text-center py-5">
+        <h5>No knowledge contributions yet</h5>
+        <p class="text-muted mb-3">
+            Submit reusable support solutions to build your contribution portfolio.
+        </p>
+
+        <a href="{{ url_for('agent.agent_solutions') }}"
+           class="btn btn-primary">
+            Submit First Solution
+        </a>
+    </div>
+
+    {% endif %}
+
+</div>
+
+{% endblock %}

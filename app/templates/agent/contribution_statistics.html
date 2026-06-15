@@ -1,0 +1,407 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}Contribution Statistics{% endblock %}
+{% endblock %}
+
+{% block text %}
+Track your solution submissions, approval progress, knowledge impact, and contribution score.
+{% endblock %}
+
+{% block content %}
+
+<div class="max-w-1000">
+    {% include 'includes/alert.html' %}
+</div>
+
+<style>
+    .profile-summary-card {
+        background: linear-gradient(135deg, #ffffff, #f8fafc);
+        border: 1px solid #e5e7eb;
+        border-radius: 18px;
+        padding: 28px;
+        box-shadow: 0 6px 18px rgba(0,0,0,0.05);
+        margin-bottom: 22px;
+    }
+
+    .stat-card {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 16px;
+        padding: 22px;
+        height: 100%;
+        box-shadow: 0 5px 14px rgba(0,0,0,0.04);
+    }
+
+        .stat-card h2 {
+            margin-bottom: 4px;
+            font-weight: 700;
+        }
+
+        .stat-card small {
+            color: #6b7280;
+        }
+
+    .impact-card {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 16px;
+        padding: 22px;
+        margin-bottom: 18px;
+        box-shadow: 0 5px 14px rgba(0,0,0,0.04);
+    }
+
+    .solution-highlight {
+        border-left: 5px solid #007bff;
+        background: #ffffff;
+        border-radius: 14px;
+        padding: 20px;
+        box-shadow: 0 5px 14px rgba(0,0,0,0.04);
+        height: 100%;
+    }
+
+    .timeline-item {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        padding: 16px;
+        margin-bottom: 12px;
+    }
+
+    .rank-badge {
+        font-size: 14px;
+        padding: 8px 12px;
+        border-radius: 20px;
+    }
+</style>
+
+<div class="profile-summary-card">
+
+    <div class="row align-items-center">
+
+        <div class="col-md-8">
+
+            <h4 class="mb-1">
+                {{ current_user.name }}
+            </h4>
+
+            <p class="text-muted mb-2">
+                Agent Knowledge Contributor
+            </p>
+
+            {% if contribution_score >= 100 %}
+            <span class="badge badge-success rank-badge">Expert Contributor</span>
+            {% elif contribution_score >= 50 %}
+            <span class="badge badge-primary rank-badge">Top Contributor</span>
+            {% elif contribution_score >= 20 %}
+            <span class="badge badge-info rank-badge">Active Contributor</span>
+            {% else %}
+            <span class="badge badge-secondary rank-badge">Contributor</span>
+            {% endif %}
+
+        </div>
+
+        <div class="col-md-4 text-center">
+
+            <h1 class="mb-0">
+                {{ contribution_score }}
+            </h1>
+
+            <small class="text-muted">
+                Contribution Score
+            </small>
+
+        </div>
+
+    </div>
+
+</div>
+
+<div class="row">
+
+    <div class="col-md-3 mb-3">
+        <div class="stat-card text-center">
+            <h2>{{ total_solutions }}</h2>
+            <small>Total Submitted</small>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-3">
+        <div class="stat-card text-center">
+            <h2>{{ approved_solutions }}</h2>
+            <small>Approved</small>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-3">
+        <div class="stat-card text-center">
+            <h2>{{ pending_solutions }}</h2>
+            <small>Pending Review</small>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-3">
+        <div class="stat-card text-center">
+            <h2>{{ rejected_solutions }}</h2>
+            <small>Rejected</small>
+        </div>
+    </div>
+
+</div>
+
+<div class="content-box content-lighten mt-4">
+
+    <h5 class="mb-3">
+        Knowledge Impact
+    </h5>
+
+    <div class="row">
+
+        <div class="col-md-4 mb-3">
+            <div class="impact-card text-center">
+                <h2>{{ total_views }}</h2>
+                <small>Total Solution Views</small>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-3">
+            <div class="impact-card text-center">
+                <h2>{{ total_reuse }}</h2>
+                <small>Total Reuse Count</small>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-3">
+            <div class="impact-card text-center">
+                <h2>{{ average_reuse }}</h2>
+                <small>Average Reuse Per Approved Solution</small>
+            </div>
+        </div>
+
+    </div>
+
+</div>
+
+<div class="content-box content-lighten mt-4">
+
+    <h5 class="mb-3">
+        Customer Satisfaction
+    </h5>
+
+    <div class="row">
+
+        <div class="col-md-3 mb-3">
+            <div class="impact-card text-center">
+                <h2>{{ average_rating }}</h2>
+                <small>Average Rating / 5</small>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-3">
+            <div class="impact-card text-center">
+                <h2>{{ total_ratings }}</h2>
+                <small>Total Reviews</small>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-3">
+            <div class="impact-card text-center">
+                <h2>{{ five_star_ratings }}</h2>
+                <small>5 Star Reviews</small>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-3">
+            <div class="impact-card text-center">
+                <h2>{{ low_ratings }}</h2>
+                <small>Low Ratings</small>
+            </div>
+        </div>
+
+    </div>
+
+    {% if recent_feedback %}
+
+    <h6 class="mt-3 mb-3">
+        Recent Customer Feedback
+    </h6>
+
+    {% for rating in recent_feedback %}
+
+    <div class="timeline-item">
+
+        <div class="d-flex justify-content-between flex-wrap">
+
+            <div>
+                <strong>
+                    Rating: {{ rating.rating }} / 5
+                </strong>
+
+                <br>
+
+                <small class="text-muted">
+                    Ticket #{{ rating.ticket.number if rating.ticket else '-' }}
+                    |
+                    {{ rating.created_at.strftime('%d %b %Y') if rating.created_at else '-' }}
+                </small>
+            </div>
+
+        </div>
+
+        {% if rating.feedback %}
+
+        <p class="text-muted mt-2 mb-0">
+            {{ rating.feedback }}
+        </p>
+
+        {% else %}
+
+        <p class="text-muted mt-2 mb-0">
+            No written feedback provided.
+        </p>
+
+        {% endif %}
+
+    </div>
+
+    {% endfor %}
+
+    {% else %}
+
+    <div class="alert alert-info mb-0">
+        No customer satisfaction ratings received yet.
+    </div>
+
+    {% endif %}
+
+</div>
+
+<div class="content-box content-lighten mt-4">
+
+    <h5 class="mb-3">
+        Top Performing Solutions
+    </h5>
+
+    <div class="row">
+
+        <div class="col-md-6 mb-3">
+
+            <div class="solution-highlight">
+
+                <h6>Most Viewed Solution</h6>
+
+                {% if most_viewed_solution %}
+                <h5>{{ most_viewed_solution.title }}</h5>
+
+                <p class="text-muted">
+                    {{ most_viewed_solution.solution[:140] }}{% if most_viewed_solution.solution|length > 140 %}...{% endif %}
+                </p>
+
+                <span class="badge badge-primary">
+                    {{ most_viewed_solution.view_count }} views
+                </span>
+
+                <span class="badge badge-secondary">
+                    {{ most_viewed_solution.status }}
+                </span>
+                {% else %}
+                <p class="text-muted mb-0">
+                    No submitted solutions yet.
+                </p>
+                {% endif %}
+
+            </div>
+
+        </div>
+
+        <div class="col-md-6 mb-3">
+
+            <div class="solution-highlight">
+
+                <h6>Most Reused Solution</h6>
+
+                {% if most_reused_solution %}
+                <h5>{{ most_reused_solution.title }}</h5>
+
+                <p class="text-muted">
+                    {{ most_reused_solution.solution[:140] }}{% if most_reused_solution.solution|length > 140 %}...{% endif %}
+                </p>
+
+                <span class="badge badge-info">
+                    {{ most_reused_solution.reuse_count }} reuse
+                </span>
+
+                <span class="badge badge-secondary">
+                    {{ most_reused_solution.status }}
+                </span>
+                {% else %}
+                <p class="text-muted mb-0">
+                    No reused solutions yet.
+                </p>
+                {% endif %}
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+<div class="content-box content-lighten mt-4">
+
+    <h5 class="mb-3">
+        Recent Contributions
+    </h5>
+
+    {% if recent_solutions %}
+
+    {% for solution in recent_solutions %}
+
+    <div class="timeline-item">
+
+        <div class="d-flex justify-content-between flex-wrap">
+
+            <div>
+                <h6 class="mb-1">
+                    {{ solution.title }}
+                </h6>
+
+                <small class="text-muted">
+                    {{ solution.category.category if solution.category else "Uncategorised" }}
+                    |
+                    {{ solution.created_at.strftime('%d %b %Y') if solution.created_at else "-" }}
+                </small>
+            </div>
+
+            <div>
+                {% if solution.status == "Approved" %}
+                <span class="badge badge-success">Approved</span>
+                {% elif solution.status == "Rejected" %}
+                <span class="badge badge-danger">Rejected</span>
+                {% else %}
+                <span class="badge badge-warning">Pending</span>
+                {% endif %}
+            </div>
+
+        </div>
+
+        <p class="text-muted mt-2 mb-0">
+            {{ solution.solution[:180] }}{% if solution.solution|length > 180 %}...{% endif %}
+        </p>
+
+    </div>
+
+    {% endfor %}
+
+    {% else %}
+
+    <div class="alert alert-info">
+        You have not submitted any solutions yet.
+    </div>
+
+    {% endif %}
+
+</div>
+
+{% endblock %}

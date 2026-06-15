@@ -1,0 +1,139 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block style %}
+{{ super() }}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/datatables/css/datatables.bootstrap4.min.css') }}">
+{% endblock %}
+
+{% block header %}
+    {% block title %}All Tickets{% endblock %}
+{% endblock %}
+
+{% block text %}
+    Monitor every ticket in the system, including assigned, unassigned, open, pending, solved, and closed tickets.
+{% endblock %}
+
+{% block content %}
+
+<div class="max-w-1000">
+    {% include 'includes/alert.html' %}
+</div>
+
+<div class="content-box mb-3 content-lighten max-w-1000">
+
+    {% if tickets %}
+
+    <table id="allTicketsTable" class="table table-striped table-borderless table-responsive-sm">
+        <thead>
+            <tr>
+                <th>Ticket</th>
+                <th>Subject</th>
+                <th>Customer</th>
+                <th>Assignee</th>
+                <th>Priority</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            {% for ticket in tickets %}
+            <tr>
+                <td>
+                    <strong>#{{ ticket.number }}</strong>
+                </td>
+
+                <td>
+                    {% if ticket.subject|length > 45 %}
+                    {{ ticket.subject[:42] }}...
+                    {% else %}
+                    {{ ticket.subject }}
+                    {% endif %}
+                </td>
+
+                <td>{{ ticket.author.name }}</td>
+
+                <td>
+                    {% if ticket.owner %}
+                    {{ ticket.owner.name }}
+                    {% else %}
+                    <span class="badge badge-warning">Unassigned</span>
+                    {% endif %}
+                </td>
+
+                <td>
+                    {% if ticket.priority %}
+                    {% if ticket.priority.priority == 'Urgent' %}
+                    <span class="badge badge-danger">Urgent</span>
+                    {% elif ticket.priority.priority == 'High' %}
+                    <span class="badge badge-warning">High</span>
+                    {% elif ticket.priority.priority == 'Medium' %}
+                    <span class="badge badge-info">Medium</span>
+                    {% else %}
+                    <span class="badge badge-secondary">Low</span>
+                    {% endif %}
+                    {% else %}
+                    <span class="text-muted">-</span>
+                    {% endif %}
+                </td>
+
+                <td>
+                    {% if ticket.status %}
+                    {% if ticket.status.status == 'Open' %}
+                    <span class="badge badge-primary">Open</span>
+                    {% elif ticket.status.status == 'Pending' %}
+                    <span class="badge badge-warning">Pending</span>
+                    {% elif ticket.status.status == 'Solved' %}
+                    <span class="badge badge-success">Solved</span>
+                    {% elif ticket.status.status == 'Closed' %}
+                    <span class="badge badge-dark">Closed</span>
+                    {% else %}
+                    <span class="badge badge-secondary">{{ ticket.status.status }}</span>
+                    {% endif %}
+                    {% else %}
+                    <span class="text-muted">-</span>
+                    {% endif %}
+                </td>
+
+                <td>{{ ticket.created_at.strftime('%d %b %Y, %H:%M') }}</td>
+
+                <td>
+                    <a href="{{ url_for('admin.view_ticket', id=ticket.id) }}"
+                       class="btn btn-primary btn-sm">
+                        Open
+                    </a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% else %}
+
+    <div class="text-center py-4">
+        <h6>No tickets found</h6>
+        <p class="text-muted mb-0">There are no tickets in the system yet.</p>
+    </div>
+
+    {% endif %}
+
+</div>
+
+{% endblock %}
+
+{% block script %}
+{{ super() }}
+<script src="{{ url_for('static', filename='vendor/datatables/js/jquery.datatables.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/datatables/js/datatables.bootstrap4.min.js') }}"></script>
+
+<script>
+    $(document).ready(function () {
+        $('#allTicketsTable').DataTable({
+            ordering: true,
+            pageLength: 10,
+            order: [[6, 'desc']]
+        });
+    });
+</script>
+{% endblock %}

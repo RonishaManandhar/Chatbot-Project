@@ -1,0 +1,673 @@
+﻿<div class="sidebar sidebar-lighten">
+    <div class="sidebar-menu">
+        <ul class="list list-unstyled list-scrollbar">
+
+            <li class="list-item">
+                <p class="list-title text-uppercase">Dashboard</p>
+
+                <ul class="list-unstyled">
+
+                    <li>
+                        <a href="{% if current_user.role == 'Administrator' %}{{ url_for('admin.dashboard') }}{% elif current_user.role == 'Agent' %}{{ url_for('agent.dashboard') }}{% elif current_user.role == 'Customer' %}{{ url_for('customer.dashboard') }}{% endif %}"
+                           class="list-link">
+                            <span class="list-icon"><i class="fa fa-home"></i></span>
+                            Home
+                        </a>
+                    </li>
+
+                    {% if current_user.role == 'Administrator' %}
+
+                    <li>
+                        <a href="{{ url_for('admin.notifications') }}" class="list-link">
+                            <span class="list-icon"><i class="fa fa-bell"></i></span>
+                            Notifications
+                            <span id="sidebarNotificationBadge"
+                                  class="badge badge-pill badge-secondary float-right"
+                                  style="{% if notifications|length == 0 %}display:none;{% endif %}">
+                                {{ notifications|length }}
+                            </span>
+                        </a>
+                    </li>
+
+                    <!-- SUPPORT OPERATIONS -->
+                    <li>
+                        <a href="javascript:void(0)" class="list-link link-arrow">
+                            <span class="list-icon"><i class="fa fa-ticket"></i></span>
+                            Support Operations
+                            <span id="sidebarSupportOperationsBadge"
+                                  class="badge badge-pill badge-danger float-right"
+                                  style="{% if support_operations_total_count == 0 %}display:none;{% endif %}">
+                                {{ support_operations_total_count }}
+                            </span>
+                        </a>
+
+                        <ul class="list-unstyled list-hidden">
+
+                            <li>
+                                <a href="{{ url_for('admin.all_tickets') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-list"></i></span>
+                                    All Tickets
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('admin.active_chats') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-comments"></i></span>
+                                    Active Chats
+                                    <span id="sidebarActiveChatsBadge"
+                                          class="badge badge-pill badge-primary float-right"
+                                          style="{% if active_chat_count == 0 %}display:none;{% endif %}">
+                                        {{ active_chat_count }}
+                                    </span>
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('admin.escalated_tickets') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-exclamation-circle"></i></span>
+                                    Escalated Tickets
+                                    <span id="sidebarEscalatedBadge"
+                                          class="badge badge-pill badge-danger float-right"
+                                          style="{% if escalated_count == 0 %}display:none;{% endif %}">
+                                        {{ escalated_count }}
+                                    </span>
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('admin.agent_reports') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-exclamation-triangle"></i></span>
+                                    Agent Reports
+                                    <span id="sidebarAgentReportsBadge"
+                                          class="badge badge-pill badge-danger float-right"
+                                          style="{% if agent_report_count == 0 %}display:none;{% endif %}">
+                                        {{ agent_report_count }}
+                                    </span>
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('admin.create_account') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-users"></i></span>
+                                    Users & Staff
+                                </a>
+                            </li>
+
+                        </ul>
+                    </li>
+
+                    <!-- AI TRAINING & REVIEW -->
+                    <li>
+                        <a href="javascript:void(0)" class="list-link link-arrow">
+                            <span class="list-icon"><i class="fa fa-shield"></i></span>
+                            AI Training & Review
+                            <span id="sidebarAiTrainingBadge"
+                                  class="badge badge-pill badge-danger float-right"
+                                  style="{% if ai_training_total_count == 0 %}display:none;{% endif %}">
+                                {{ ai_training_total_count }}
+                            </span>
+                        </a>
+
+                        <ul class="list-unstyled list-hidden">
+
+                            <li>
+                                <a href="{{ url_for('admin.chat_logs') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-list-alt"></i></span>
+                                    Review Queue
+                                    <span id="sidebarAiReviewBadge"
+                                          class="badge badge-pill badge-warning float-right"
+                                          style="{% if ai_review_count == 0 %}display:none;{% endif %}">
+                                        {{ ai_review_count }}
+                                    </span>
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('admin.training_cases') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-exclamation-triangle"></i></span>
+                                    Training Cases
+                                    <span id="sidebarAiTrainingCasesBadge"
+                                          class="badge badge-pill badge-danger float-right"
+                                          style="{% if ai_training_case_count == 0 %}display:none;{% endif %}">
+                                        {{ ai_training_case_count }}
+                                    </span>
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('admin.repeated_questions') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-repeat"></i></span>
+                                    Repeated Questions
+                                    <span id="sidebarRepeatedQuestionsBadge"
+                                          class="badge badge-pill badge-info float-right"
+                                          style="{% if ai_repeated_question_count == 0 %}display:none;{% endif %}">
+                                        {{ ai_repeated_question_count }}
+                                    </span>
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('admin.ai_learning_dashboard') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-line-chart"></i></span>
+                                    AI Learning Dashboard
+                                </a>
+                            </li>
+
+                        </ul>
+                    </li>
+
+                    <!-- KNOWLEDGE MANAGEMENT -->
+                    <li>
+                        <a href="javascript:void(0)" class="list-link link-arrow">
+                            <span class="list-icon"><i class="fa fa-book"></i></span>
+                            Knowledge Management
+                            <span id="sidebarKnowledgeManagementBadge"
+                                  class="badge badge-pill badge-danger float-right"
+                                  style="{% if knowledge_management_total_count == 0 %}display:none;{% endif %}">
+                                {{ knowledge_management_total_count }}
+                            </span>
+                        </a>
+
+                        <ul class="list-unstyled list-hidden">
+
+                            <li>
+                                <a href="{{ url_for('admin.knowledge_base') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-question-circle"></i></span>
+                                    FAQs
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('admin.knowledge_articles') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-database"></i></span>
+                                    Knowledge Base Articles
+                                    <span id="sidebarInactiveArticlesBadge"
+                                          class="badge badge-pill badge-warning float-right"
+                                          style="{% if inactive_article_count == 0 %}display:none;{% endif %}">
+                                        {{ inactive_article_count }}
+                                    </span>
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('admin.faq_suggestions') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-lightbulb-o"></i></span>
+                                    FAQ Suggestions
+                                    <span id="sidebarFaqSuggestionsBadge"
+                                          class="badge badge-pill badge-danger float-right"
+                                          style="{% if faq_suggestion_count == 0 %}display:none;{% endif %}">
+                                        {{ faq_suggestion_count }}
+                                    </span>
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('admin.knowledge_analytics') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-bar-chart"></i></span>
+                                    Knowledge Analytics
+                                </a>
+                            </li>
+
+                        </ul>
+                    </li>
+
+                    <!-- AGENT KNOWLEDGE -->
+                    <li>
+                        <a href="javascript:void(0)" class="list-link link-arrow">
+                            <span class="list-icon"><i class="fa fa-code"></i></span>
+                            Agent Knowledge
+                            <span id="sidebarAgentKnowledgeBadge"
+                                  class="badge badge-pill badge-danger float-right"
+                                  style="{% if agent_knowledge_total_count == 0 %}display:none;{% endif %}">
+                                {{ agent_knowledge_total_count }}
+                            </span>
+                        </a>
+
+                        <ul class="list-unstyled list-hidden">
+
+                            <li>
+                                <a href="{{ url_for('admin.closed_ticket_knowledge') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-check-square-o"></i></span>
+                                    Closed Ticket Knowledge
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('admin.agent_solution_library') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-lightbulb-o"></i></span>
+                                    Agent Solution Library
+                                    <span id="sidebarPendingAgentSolutionsBadge"
+                                          class="badge badge-pill badge-warning float-right"
+                                          style="{% if pending_agent_solution_count == 0 %}display:none;{% endif %}">
+                                        {{ pending_agent_solution_count }}
+                                    </span>
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('admin.agent_contributions') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-user-plus"></i></span>
+                                    Agent Contributions
+                                </a>
+                            </li>
+
+                        </ul>
+                    </li>
+
+                    <!-- ANALYTICS & REPORTING -->
+                    <li>
+                        <a href="javascript:void(0)" class="list-link link-arrow ">
+                            <span class="list-icon"><i class="fa fa-area-chart"></i></span>
+                            Analytics & Reporting
+
+                        </a>
+
+                        <ul class="list-unstyled list-hidden">
+
+                            <li>
+                                <a href="{{ url_for('admin.analytics') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-line-chart"></i></span>
+                                    Analytics Dashboard
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('admin.agent_performance') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-user"></i></span>
+                                    Agent Performance
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('admin.customer_satisfaction') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-star"></i></span>
+                                    Customer Satisfaction
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('admin.chatbot_performance') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-shield"></i></span>
+                                    Chatbot Performance
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('admin.resolution_comparison') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-balance-scale"></i></span>
+                                    Resolution Comparison
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('admin.export_reports') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-download"></i></span>
+                                    Export Reports
+                                </a>
+                            </li>
+
+
+                        </ul>
+                    </li>
+
+                    <!-- AI SETTINGS -->
+                    <li>
+                        <a href="{{ url_for('admin.chatbot_settings') }}" class="list-link">
+                            <span class="list-icon"><i class="fa fa-cogs"></i></span>
+                            AI Settings
+                        </a>
+                    </li>
+                    <!-- SYSTEM OPERATIONS -->
+                    <li>
+                        <a href="javascript:void(0)" class="list-link link-arrow">
+                            <span class="list-icon">
+                                <i class="fa fa-cogs"></i>
+                            </span>
+                            System Operations
+
+                        </a>
+
+                        <ul class="list-unstyled list-hidden">
+
+                            <li>
+                                <a href="{{ url_for('admin.system_health') }}" class="list-link">
+                                    <span class="list-icon">
+                                        <i class="fa fa-heartbeat"></i>
+                                    </span>
+                                    System Health
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('admin.security_events') }}" class="list-link">
+                                    <span class="list-icon">
+                                        <i class="fa fa-shield"></i>
+                                    </span>
+                                    Security Events
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('admin.maintenance_mode') }}" class="list-link">
+                                    <span class="list-icon">
+                                        <i class="fa fa-wrench"></i>
+                                    </span>
+                                    Maintenance Mode
+                                </a>
+                            </li>
+
+                        </ul>
+                    </li>
+
+                    <!-- SYSTEM SETTINGS -->
+                    <li>
+                        <a href="javascript:void(0)" class="list-link link-arrow ">
+                            <span class="list-icon"><i class="fa fa-wrench"></i></span>
+                            System Settings
+
+                        </a>
+
+                        <ul class="list-unstyled list-hidden">
+
+                            <li>
+                                <a href="{{ url_for('admin.category') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-folder"></i></span>
+                                    FAQ Categories
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('admin.priority') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-flag"></i></span>
+                                    Priorities
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('admin.status') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-tasks"></i></span>
+                                    Statuses
+                                </a>
+                            </li>
+
+                        </ul>
+                    </li>
+
+                    {% elif current_user.role == 'Agent' %}
+
+                    <!-- AGENT SUPPORT DESK -->
+                    <li>
+                        <a href="{{ url_for('agent.notifications') }}" class="list-link">
+                            <span class="list-icon"><i class="fa fa-bell"></i></span>
+                            Notifications
+                            <span id="sidebarNotificationBadge"
+                                  class="badge badge-pill badge-secondary float-right"
+                                  style="{% if notifications|length == 0 %}display:none;{% endif %}">
+                                {{ notifications|length }}
+                            </span>
+                        </a>
+                    </li>
+
+                    <li>
+                        <a href="javascript:void(0)" class="list-link link-arrow">
+                            <span class="list-icon"><i class="fa fa-headphones"></i></span>
+                            Support Desk
+                            <span id="sidebarAgentSupportDeskBadge"
+                                  class="badge badge-pill badge-danger float-right"
+                                  style="{% if agent_support_desk_total_count == 0 %}display:none;{% endif %}">
+                                {{ agent_support_desk_total_count }}
+                            </span>
+                        </a>
+
+                        <ul class="list-unstyled list-hidden">
+
+                            <li>
+                                <a href="{{ url_for('agent.new_tickets') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-inbox"></i></span>
+                                    New Tickets
+                                    <span id="sidebarAgentNewTicketsBadge"
+                                          class="badge badge-pill badge-primary float-right"
+                                          style="{% if agent_new_ticket_count == 0 %}display:none;{% endif %}">
+                                        {{ agent_new_ticket_count }}
+                                    </span>
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('agent.my_tickets') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-tasks"></i></span>
+                                    Assigned Work Queue
+                                    <span id="sidebarAgentAssignedBadge"
+                                          class="badge badge-pill badge-info float-right"
+                                          style="{% if agent_assigned_ticket_count == 0 %}display:none;{% endif %}">
+                                        {{ agent_assigned_ticket_count }}
+                                    </span>
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('agent.support_help') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-comments"></i></span>
+                                    Support Help
+                                </a>
+                            </li>
+
+                        </ul>
+                    </li>
+
+                    <!-- AGENT KNOWLEDGE CENTER -->
+                    <li>
+                        <a href="javascript:void(0)" class="list-link link-arrow">
+                            <span class="list-icon"><i class="fa fa-book"></i></span>
+                            Knowledge Center
+                            <span id="sidebarAgentKnowledgeCenterBadge"
+                                  class="badge badge-pill badge-danger float-right"
+                                  style="{% if agent_knowledge_center_total_count == 0 %}display:none;{% endif %}">
+                                {{ agent_knowledge_center_total_count }}
+                            </span>
+                        </a>
+
+                        <ul class="list-unstyled list-hidden">
+
+                            <li>
+                                <a href="{{ url_for('agent.faq_library') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-question-circle"></i></span>
+                                    FAQ Library
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('agent.knowledge_base') }}"
+                                   class="list-link">
+                                    <span class="list-icon"><i class="fa fa-database"></i></span>
+                                    Knowledge Base
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('agent.agent_solutions') }}"
+                                   class="list-link">
+                                    <span class="list-icon">
+                                        <i class="fa fa-lightbulb-o"></i>
+                                    </span>
+                                    Agent Solutions
+
+                                    <span class="badge badge-pill badge-info float-right"
+                                          style="{% if agent_my_pending_solution_count == 0 %}display:none;{% endif %}">
+                                        {{ agent_my_pending_solution_count }}
+                                    </span>
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('agent.suggested_articles') }}"
+                                   class="list-link">
+                                    <span class="list-icon">
+                                        <i class="fa fa-magic"></i>
+                                    </span>
+                                    Suggested Articles
+                                </a>
+                            </li>
+
+                        </ul>
+                    </li>
+
+                    <!-- AGENT REPORTS -->
+                    <li>
+                        <a href="javascript:void(0)" class="list-link link-arrow">
+                            <span class="list-icon"><i class="fa fa-file-text"></i></span>
+                            Reports
+                            <span id="sidebarAgentReportsMainBadge"
+                                  class="badge badge-pill badge-danger float-right"
+                                  style="{% if agent_reports_total_count == 0 %}display:none;{% endif %}">
+                                {{ agent_reports_total_count }}
+                            </span>
+                        </a>
+
+                        <ul class="list-unstyled list-hidden">
+
+                            <li>
+                                <a href="{{ url_for('agent.incident_log') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-shield"></i></span>
+                                    Incident Log
+                                    <span id="sidebarAgentIncidentBadge"
+                                          class="badge badge-pill badge-danger float-right"
+                                          style="{% if agent_incident_report_count == 0 %}display:none;{% endif %}">
+                                        {{ agent_incident_report_count }}
+                                    </span>
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('agent.issue_log') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-exclamation-triangle"></i></span>
+                                    Issue Log
+                                    <span id="sidebarAgentIssueBadge"
+                                          class="badge badge-pill badge-danger float-right"
+                                          style="{% if agent_issue_report_count == 0 %}display:none;{% endif %}">
+                                        {{ agent_issue_report_count }}
+                                    </span>
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('agent.internal_reports') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-file-text"></i></span>
+                                    Internal Reports
+                                    <span id="sidebarAgentInternalBadge"
+                                          class="badge badge-pill badge-danger float-right"
+                                          style="{% if agent_internal_report_count == 0 %}display:none;{% endif %}">
+                                        {{ agent_internal_report_count }}
+                                    </span>
+                                </a>
+                            </li>
+
+                        </ul>
+                    </li>
+
+                    <!-- AGENT PERFORMANCE -->
+                    <li>
+                        <a href="javascript:void(0)" class="list-link link-arrow">
+                            <span class="list-icon"><i class="fa fa-line-chart"></i></span>
+                            My Performance
+                            <span id="sidebarAgentPerformanceBadge"
+                                  class="badge badge-pill badge-danger float-right"
+                                  style="{% if agent_performance_total_count == 0 %}display:none;{% endif %}">
+                                {{ agent_performance_total_count }}
+                            </span>
+                        </a>
+
+                        <ul class="list-unstyled list-hidden">
+
+                            <li>
+                                <a href="{{ url_for('agent.contribution_statistics') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-bar-chart"></i></span>
+                                    Contribution Statistics
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('agent.solution_effectiveness') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-check-circle"></i></span>
+                                    Solution Effectiveness
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('agent.knowledge_contributions') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-graduation-cap"></i></span>
+                                    Knowledge Contributions
+                                    <span id="sidebarAgentKnowledgeContributionBadge"
+                                          class="badge badge-pill badge-info float-right"
+                                          style="{% if agent_my_pending_solution_count == 0 %}display:none;{% endif %}">
+                                        {{ agent_my_pending_solution_count }}
+                                    </span>
+                                </a>
+                            </li>
+
+                        </ul>
+                    </li>
+
+                    {% elif current_user.role == 'Customer' %}
+
+                    <!-- CUSTOMER SUPPORT -->
+                    <li>
+                        <a href="{{ url_for('customer.notifications') }}" class="list-link">
+                            <span class="list-icon"><i class="fa fa-bell"></i></span>
+                            Notifications
+                            <span id="sidebarNotificationBadge"
+                                  class="badge badge-pill badge-secondary float-right"
+                                  style="{% if notifications|length == 0 %}display:none;{% endif %}">
+                                {{ notifications|length }}
+                            </span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="javascript:void(0)" class="list-link link-arrow">
+                            <span class="list-icon"><i class="fa fa-comments"></i></span>
+                            Customer Support
+
+                        </a>
+
+                        <ul class="list-unstyled list-hidden">
+
+                            <li>
+                                <a href="{{ url_for('customer.my_tickets') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-ticket"></i></span>
+                                    My Tickets
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('customer.chat_page') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-comment"></i></span>
+                                    Chatbot
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('customer.faqs') }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-question-circle"></i></span>
+                                    FAQs
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ url_for('customer.knowledge_base') }}"
+                                   class="list-link">
+                                    <span class="list-icon"><i class="fa fa-database"></i></span>
+                                    Knowledge Base
+                                </a>
+                            </li>
+
+                        </ul>
+                    </li>
+
+                    {% endif %}
+
+                </ul>
+            </li>
+
+        </ul>
+    </div>
+</div>

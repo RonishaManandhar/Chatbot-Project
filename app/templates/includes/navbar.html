@@ -1,0 +1,320 @@
+﻿<nav class="navbar navbar-expand-lg fixed-top navbar-lighten">
+
+    <a class="navbar-brand navbar-link" href="javascript:void(0)">
+        chatbot
+    </a>
+
+    <span class="navbar-text">
+        <a href="javascript:void(0)" id="sidebar-toggle" class="navbar-bars">
+            <i class="fa fa-bars"></i>
+        </a>
+    </span>
+
+    <div class="collapse navbar-collapse">
+
+        <div class="dropdown ml-auto mr-4" style="position:relative;">
+
+            <a href="javascript:void(0)"
+               class="dropdown-link position-relative"
+               data-toggle="dropdown"
+               aria-haspopup="true"
+               aria-expanded="false">
+
+                <i class="fa fa-bell fa-lg"></i>
+
+                <span id="liveNotificationBadge"
+                      class="badge badge-danger"
+                      style="position:absolute; top:-10px; right:-12px; font-size:10px; min-width:18px; height:18px; line-height:12px; border-radius:50%; padding:3px; {% if notifications|length == 0 %}display:none;{% endif %}">
+                    {{ notifications|length }}
+                </span>
+            </a>
+
+            <div class="dropdown-menu dropdown-menu-right p-0"
+                 style="width:350px; max-height:500px; overflow-y:auto;">
+
+                <div class="p-3 border-bottom">
+                    <strong>Notifications</strong>
+                </div>
+
+                <div id="liveNotificationList">
+
+                    {% if notifications %}
+
+                    {% for notification in notifications[:10] %}
+
+                    <a href="{% if current_user.role == 'Administrator' %}{{ url_for('admin.open_notification', nid=notification.id) }}{% elif current_user.role == 'Agent' %}{{ url_for('agent.open_notification', nid=notification.id) }}{% else %}{{ url_for('customer.open_notification', nid=notification.id) }}{% endif %}"
+                       class="dropdown-item border-bottom py-3"
+                       data-notification-id="{{ notification.id }}">
+
+                        <div style="font-size:13px;">
+                            <strong>
+                                {% if notification.sender %}
+                                {{ notification.sender.name }}
+                                {% else %}
+                                System
+                                {% endif %}
+                            </strong>
+                            {{ notification.message }}
+                        </div>
+
+                        <small class="text-muted">
+                            {% if notification.ticket_notification %}
+                            Ticket #{{ notification.ticket_notification.number }}
+                            {% elif notification.agent_report_id %}
+                            Agent Report #{{ notification.agent_report_id }}
+                            {% elif notification.title %}
+                            {{ notification.title }}
+                            {% else %}
+                            General notification
+                            {% endif %}
+                        </small>
+                    </a>
+                    {% endfor %}
+
+                    {% else %}
+
+                    <div id="emptyNotificationText" class="p-3 text-center text-muted">
+                        No notifications
+                    </div>
+
+                    {% endif %}
+
+                </div>
+
+                <div class="p-2 border-top text-center">
+                    <a href="{% if current_user.role == 'Administrator' %}{{ url_for('admin.notifications') }}{% elif current_user.role == 'Agent' %}{{ url_for('agent.notifications') }}{% else %}{{ url_for('customer.notifications') }}{% endif %}">
+                        View all notifications
+                    </a>
+                </div>
+
+            </div>
+        </div>
+
+        <div class="dropdown dropdown-logged dropdown-logged-lighten">
+
+            <a href="javascript:void(0)"
+               data-toggle="dropdown"
+               class="dropdown-logged-toggle dropdown-link">
+
+                <span class="dropdown-user float-left">
+                    {{ current_user.name }}
+                </span>
+            </a>
+
+            <div class="dropdown-menu dropdown-logged-menu dropdown-menu-right border-0 dropdown-menu-lighten">
+
+                <div class="dropdown-menu-arrow"></div>
+
+                <a class="dropdown-item dropdown-logged-item"
+                   href="{% if current_user.role == 'Administrator' %}{{ url_for('admin.my_profile') }}{% elif current_user.role == 'Agent' %}{{ url_for('agent.my_profile') }}{% else %}{{ url_for('customer.my_profile') }}{% endif %}">
+
+                    <i class="fa fa-user-o"></i>
+                    Your profile
+                </a>
+
+                <a class="dropdown-item dropdown-logged-item"
+                   href="{% if current_user.role == 'Administrator' %}{{ url_for('admin.change_password') }}{% elif current_user.role == 'Agent' %}{{ url_for('agent.change_password') }}{% else %}{{ url_for('customer.change_password') }}{% endif %}">
+
+                    <i class="fa fa-key"></i>
+                    Change password
+                </a>
+
+                <div class="dropdown-divider border-light"></div>
+
+                <a class="dropdown-item dropdown-logged-item" href="{{ url_for('auth.logout') }}">
+                    <i class="fa fa-sign-out"></i>
+                    Logout
+                </a>
+
+            </div>
+        </div>
+
+    </div>
+</nav>
+
+{% if current_user.is_authenticated %}
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const CURRENT_USER_ID = "{{ current_user.id }}";
+    const CURRENT_ROLE = "{{ current_user.role }}";
+
+    if (typeof io === "undefined") {
+        console.error("Socket.IO not loaded for navbar notifications.");
+        return;
+    }
+
+    const navbarSocket = io("/", {
+        transports: ["polling"]
+    });
+
+    function setBadgeCount(id, count) {
+        const badge = document.getElementById(id);
+        if (!badge) return;
+
+        const number = Math.max(0, Number(count || 0));
+        badge.innerText = number;
+        badge.style.display = number > 0 ? "inline-block" : "none";
+    }
+
+    function getBadgeNumber(id) {
+        const badge = document.getElementById(id);
+        if (!badge) return 0;
+
+        const current = parseInt((badge.innerText || "0").trim());
+        return isNaN(current) ? 0 : current;
+    }
+
+    function increaseBadge(id) {
+        setBadgeCount(id, getBadgeNumber(id) + 1);
+    }
+
+    function clearNotificationBadges() {
+        setBadgeCount("liveNotificationBadge", 0);
+        setBadgeCount("sidebarNotificationBadge", 0);
+    }
+
+    function getNotificationOpenUrl(notificationId) {
+        if (!notificationId) {
+            if (CURRENT_ROLE === "Administrator") return "/admin/notifications";
+            if (CURRENT_ROLE === "Agent") return "/agent/notifications";
+            return "/customer/notifications";
+        }
+
+        if (CURRENT_ROLE === "Administrator") {
+            return `/admin/notification/open/${notificationId}`;
+        }
+
+        if (CURRENT_ROLE === "Agent") {
+            return `/agent/notification/open/${notificationId}`;
+        }
+
+        return `/customer/notification/open/${notificationId}`;
+    }
+
+    function safeText(value) {
+        const div = document.createElement("div");
+        div.innerText = value || "";
+        return div.innerHTML;
+    }
+
+    function showFloatingAlert(title, message) {
+        const alertBox = document.createElement("div");
+
+        alertBox.innerHTML = `
+            <strong>${safeText(title)}</strong><br>
+            ${safeText(message)}
+        `;
+
+        alertBox.style.position = "fixed";
+        alertBox.style.top = "20px";
+        alertBox.style.right = "20px";
+        alertBox.style.background = "#111827";
+        alertBox.style.color = "#ffffff";
+        alertBox.style.padding = "14px 18px";
+        alertBox.style.borderRadius = "12px";
+        alertBox.style.boxShadow = "0 8px 22px rgba(0,0,0,0.25)";
+        alertBox.style.zIndex = "99999";
+        alertBox.style.fontSize = "14px";
+
+        document.body.appendChild(alertBox);
+
+        setTimeout(function () {
+            alertBox.remove();
+        }, 4500);
+    }
+
+    function prependNotification(data) {
+        const list = document.getElementById("liveNotificationList");
+        if (!list) return;
+
+        const emptyText = document.getElementById("emptyNotificationText");
+        if (emptyText) emptyText.remove();
+
+        if (data.notification_id) {
+            const existing = list.querySelector(
+                `[data-notification-id="${data.notification_id}"]`
+            );
+
+            if (existing) {
+                return;
+            }
+        }
+
+        const item = document.createElement("a");
+
+        item.className = "dropdown-item border-bottom py-3";
+        item.href = getNotificationOpenUrl(data.notification_id);
+        item.setAttribute("data-notification-id", data.notification_id || "");
+
+        let smallText = "General notification";
+
+        if (data.ticket_number) {
+            smallText = `Ticket #${data.ticket_number}`;
+        } else if (data.agent_report_id) {
+            smallText = `Agent Report #${data.agent_report_id}`;
+        } else if (data.title) {
+            smallText = data.title;
+        } else if (data.item_type) {
+            smallText = String(data.item_type).replaceAll("_", " ");
+        }
+
+        item.innerHTML = `
+            <div style="font-size:13px;">
+                <strong>${safeText(data.sender || "System")}</strong>
+                ${safeText(data.message || "sent a notification")}
+            </div>
+            <small class="text-muted">${safeText(smallText)}</small>
+        `;
+
+        list.prepend(item);
+
+        const items = list.querySelectorAll(".dropdown-item");
+        if (items.length > 10) {
+            items[items.length - 1].remove();
+        }
+    }
+
+    navbarSocket.on("connect", function () {
+        navbarSocket.emit("join_notification_room", {
+            user_id: CURRENT_USER_ID
+        });
+    });
+
+    navbarSocket.on("new_notification", function (data) {
+        if (!data || String(data.receiver_id) !== String(CURRENT_USER_ID)) {
+            return;
+        }
+
+        increaseBadge("liveNotificationBadge");
+        increaseBadge("sidebarNotificationBadge");
+
+        prependNotification(data);
+
+        showFloatingAlert(
+            "New Notification",
+            data.message || "You have a new update."
+        );
+    });
+
+    navbarSocket.on("notification_read", function (data) {
+        if (!data || String(data.receiver_id) !== String(CURRENT_USER_ID)) {
+            return;
+        }
+
+        clearNotificationBadges();
+    });
+
+    navbarSocket.on("notification_updated", function (data) {
+        if (!data || String(data.receiver_id) !== String(CURRENT_USER_ID)) {
+            return;
+        }
+
+        if (data.unread_count !== undefined) {
+            setBadgeCount("liveNotificationBadge", data.unread_count);
+            setBadgeCount("sidebarNotificationBadge", data.unread_count);
+        }
+    });
+});
+</script>
+{% endif %}
+

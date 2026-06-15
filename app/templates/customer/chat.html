@@ -1,0 +1,55 @@
+﻿{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}Customer Support Chat{% endblock %}
+{% endblock %}
+
+{% block text %}
+    Continue your AI and live support conversation.
+{% endblock %}
+
+{% block content %}
+
+<link rel="stylesheet"
+      href="{{ url_for('static', filename='widget/widget.css') }}">
+
+<style>
+    .customer-support-page {
+        max-width: 1000px;
+    }
+
+        .customer-support-page #support-widget-panel {
+            position: relative !important;
+            right: auto !important;
+            bottom: auto !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            height: 720px !important;
+            display: block !important;
+            border-radius: 16px !important;
+            z-index: 1 !important;
+        }
+
+        .customer-support-page #support-widget-launcher {
+            display: none !important;
+        }
+
+        .customer-support-page .support-widget-shell {
+            height: 100%;
+        }
+
+        .customer-support-page .support-widget-messages {
+            height: 590px !important;
+        }
+</style>
+
+<div class="content-box mb-3 content-lighten customer-support-page">
+
+    <div id="support-widget-embedded"></div>
+
+</div>
+
+<script src="{{ url_for('static', filename='js/live_chat_core.js') }}"></script>
+<script src="{{ url_for('static', filename='js/customer_support_box.js') }}"></script>
+
+{% endblock %}

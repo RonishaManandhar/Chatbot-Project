@@ -1,0 +1,131 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}{{ article.title }}{% endblock %}
+{% endblock %}
+
+{% block text %}
+Knowledge Base Article
+{% endblock %}
+
+{% block content %}
+
+<style>
+
+    .article-container {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 20px;
+        padding: 32px;
+        box-shadow: 0 6px 18px rgba(0,0,0,0.05);
+    }
+
+    .article-header {
+        margin-bottom: 24px;
+        padding-bottom: 20px;
+        border-bottom: 1px solid #e5e7eb;
+    }
+
+    .article-content {
+        line-height: 1.9;
+        font-size: 15px;
+        color: #374151;
+        white-space: pre-wrap;
+    }
+
+    .article-footer {
+        margin-top: 30px;
+        padding-top: 20px;
+        border-top: 1px solid #e5e7eb;
+    }
+
+    .help-box {
+        background: #f8fafc;
+        border-radius: 14px;
+        padding: 18px;
+        margin-top: 20px;
+    }
+</style>
+
+<div class="article-container">
+
+    <div class="article-header">
+
+        <h2>
+            {{ article.title }}
+        </h2>
+
+        <div class="mt-3">
+
+            {% if article.category %}
+
+            <span class="badge badge-primary">
+                {{ article.category.category }}
+            </span>
+
+            {% endif %}
+
+            {% if article.tags %}
+
+            <span class="badge badge-secondary">
+                {{ article.tags }}
+            </span>
+
+            {% endif %}
+
+            <span class="badge badge-info">
+                {{ article.view_count }} Views
+            </span>
+
+        </div>
+
+    </div>
+
+    <div class="article-content">
+
+        {{ article.content }}
+
+    </div>
+
+    <div class="article-footer">
+
+        <small class="text-muted">
+
+            Published:
+            {{ article.created_at.strftime('%d %b %Y') if article.created_at else '-' }}
+
+        </small>
+
+    </div>
+
+</div>
+
+<div class="help-box">
+
+    <h5>
+        Still need help?
+    </h5>
+
+    <p class="mb-3">
+
+        If this article did not answer your question, you can contact support or create a ticket.
+
+    </p>
+
+    <a href="{{ url_for('customer.chat_page') }}"
+       class="btn btn-primary btn-sm">
+
+        Open Chatbot
+
+    </a>
+
+    <a href="{{ url_for('customer.create_ticket') }}"
+       class="btn btn-outline-primary btn-sm">
+
+        Create Ticket
+
+    </a>
+
+</div>
+
+{% endblock %}

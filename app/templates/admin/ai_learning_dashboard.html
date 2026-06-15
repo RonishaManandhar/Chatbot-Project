@@ -1,0 +1,288 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}AI Learning Dashboard{% endblock %}
+{% endblock %}
+
+{% block text %}
+Monitor chatbot learning performance, review workload, failed answers, escalations, and FAQ growth.
+{% endblock %}
+
+{% block content %}
+
+<div class="max-w-1000">
+    {% include 'includes/alert.html' %}
+</div>
+
+<div class="content-box content-lighten">
+
+    <h4 class="mb-4">AI Learning Dashboard</h4>
+
+    <div class="row">
+
+        <div class="col-md-4 mb-3">
+            <div class="card border-warning">
+                <div class="card-body text-center">
+                    <h2>{{ pending_count }}</h2>
+                    <h6>Pending Reviews</h6>
+
+                    <a href="{{ url_for('admin.review_queue') }}"
+                       class="btn btn-warning btn-sm mt-2">
+                        Open Review Queue
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-3">
+            <div class="card border-danger">
+                <div class="card-body text-center">
+                    <h2>{{ rejected_count }}</h2>
+                    <h6>Rejected Answers</h6>
+
+                    <a href="{{ url_for('admin.training_cases', type='rejected') }}"
+                       class="btn btn-danger btn-sm mt-2">
+                        Review Rejected
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-3">
+            <div class="card border-danger">
+                <div class="card-body text-center">
+                    <h2>{{ failed_count }}</h2>
+                    <h6>Failed Questions</h6>
+
+                    <a href="{{ url_for('admin.training_cases', type='failed') }}"
+                       class="btn btn-danger btn-sm mt-2">
+                        Review Failures
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6 mb-3">
+            <div class="card border-warning">
+                <div class="card-body text-center">
+                    <h2>{{ escalated_count }}</h2>
+                    <h6>Escalated Conversations</h6>
+
+                    <a href="{{ url_for('admin.training_cases', type='escalated') }}"
+                       class="btn btn-warning btn-sm mt-2">
+                        View Escalations
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6 mb-3">
+            <div class="card border-success">
+                <div class="card-body text-center">
+                    <h2>{{ saved_faq_count }}</h2>
+                    <h6>Saved FAQs</h6>
+
+                    <a href="{{ url_for('admin.knowledge_base') }}"
+                       class="btn btn-success btn-sm mt-2">
+                        Open Knowledge Base
+                    </a>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+</div>
+
+<div class="content-box content-lighten mt-4">
+
+    <h5 class="mb-3">AI Learning Charts</h5>
+
+    <div class="row">
+
+        <div class="col-md-6 mb-4">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="text-center mb-3">Review Status Breakdown</h6>
+                    <canvas id="reviewStatusChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6 mb-4">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="text-center mb-3">Learning Outcome Summary</h6>
+                    <canvas id="learningOutcomeChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+</div>
+
+<div class="content-box content-lighten mt-4">
+
+    <h5 class="mb-3">AI Training Tools</h5>
+
+    <div class="row">
+
+        <div class="col-md-3 mb-2">
+            <a href="{{ url_for('admin.review_queue') }}"
+               class="btn btn-primary btn-block">
+                Review Queue
+            </a>
+        </div>
+
+        <div class="col-md-3 mb-2">
+            <a href="{{ url_for('admin.training_cases') }}"
+               class="btn btn-danger btn-block">
+                Training Cases
+            </a>
+        </div>
+
+        <div class="col-md-3 mb-2">
+            <a href="{{ url_for('admin.training_cases', type='failed') }}"
+               class="btn btn-warning btn-block">
+                Failed Cases
+            </a>
+        </div>
+
+        <div class="col-md-3 mb-2">
+            <a href="{{ url_for('admin.training_cases', type='escalated') }}"
+               class="btn btn-secondary btn-block">
+                Escalated Cases
+            </a>
+        </div>
+
+        <div class="col-md-3 mb-2">
+            <a href="{{ url_for('admin.repeated_questions') }}"
+               class="btn btn-info btn-block">
+                Repeated Questions
+            </a>
+        </div>
+
+        <div class="col-md-3 mb-2">
+            <a href="{{ url_for('admin.chat_history') }}"
+               class="btn btn-dark btn-block">
+                Chat History
+            </a>
+        </div>
+
+        <div class="col-md-3 mb-2">
+            <a href="{{ url_for('admin.knowledge_base') }}"
+               class="btn btn-success btn-block">
+                Knowledge Base
+            </a>
+        </div>
+
+        <div class="col-md-3 mb-2">
+            <a href="{{ url_for('admin.chatbot_settings') }}"
+               class="btn btn-primary btn-block">
+                AI Settings
+            </a>
+        </div>
+
+    </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+    const pendingCount = {{ pending_count|default(0) }};
+    const rejectedCount = {{ rejected_count|default(0) }};
+    const failedCount = {{ failed_count|default(0) }};
+    const escalatedCount = {{ escalated_count|default(0) }};
+    const savedFaqCount = {{ saved_faq_count|default(0) }};
+
+    const reviewStatusCanvas = document.getElementById("reviewStatusChart");
+
+    if (reviewStatusCanvas) {
+        new Chart(reviewStatusCanvas, {
+            type: "doughnut",
+            data: {
+                labels: [
+                    "Pending Reviews",
+                    "Rejected Answers",
+                    "Saved as FAQ"
+                ],
+                datasets: [{
+                    data: [
+                        pendingCount,
+                        rejectedCount,
+                        savedFaqCount
+                    ],
+                    backgroundColor: [
+                        "#ffc107",
+                        "#dc3545",
+                        "#28a745"
+                    ],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        position: "bottom"
+                    }
+                }
+            }
+        });
+    }
+
+    const learningOutcomeCanvas = document.getElementById("learningOutcomeChart");
+
+    if (learningOutcomeCanvas) {
+        new Chart(learningOutcomeCanvas, {
+            type: "bar",
+            data: {
+                labels: [
+                    "Failed",
+                    "Escalated",
+                    "Saved FAQs",
+                    "Rejected",
+                    "Pending"
+                ],
+                datasets: [{
+                    label: "Total Count",
+                    data: [
+                        failedCount,
+                        escalatedCount,
+                        savedFaqCount,
+                        rejectedCount,
+                        pendingCount
+                    ],
+                    backgroundColor: [
+                        "#dc3545",
+                        "#ffc107",
+                        "#28a745",
+                        "#6c757d",
+                        "#007bff"
+                    ],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            precision: 0
+                        }
+                    }
+                }
+            }
+        });
+    }
+</script>
+
+{% endblock %}

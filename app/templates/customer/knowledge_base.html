@@ -1,0 +1,206 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}Knowledge Base{% endblock %}
+{% endblock %}
+
+{% block text %}
+Browse help articles and find answers without creating a support ticket.
+{% endblock %}
+
+{% block content %}
+
+<div class="max-w-1000">
+    {% include 'includes/alert.html' %}
+</div>
+
+<style>
+
+    .help-banner {
+        background: linear-gradient(135deg, #2563eb, #3b82f6);
+        color: white;
+        border-radius: 20px;
+        padding: 30px;
+        margin-bottom: 24px;
+    }
+
+        .help-banner h3 {
+            color: white;
+            margin-bottom: 10px;
+        }
+
+    .search-box {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 18px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+
+    .article-card {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 18px;
+        padding: 22px;
+        height: 100%;
+        transition: all 0.2s ease;
+        box-shadow: 0 5px 14px rgba(0,0,0,0.04);
+    }
+
+        .article-card:hover {
+            transform: translateY(-3px);
+        }
+
+        .article-card h5 {
+            font-weight: 700;
+        }
+
+        .article-card p {
+            color: #6b7280;
+        }
+
+    .article-meta {
+        margin-top: 12px;
+    }
+</style>
+
+<div class="help-banner">
+
+    <h3>
+        Knowledge Base
+    </h3>
+
+    <p class="mb-0">
+        Find answers, troubleshooting guides, and support articles.
+    </p>
+
+</div>
+
+<div class="search-box">
+
+    <form method="GET">
+
+        <div class="row">
+
+            <div class="col-md-5 mb-2">
+
+                <input type="text"
+                       name="search"
+                       class="form-control"
+                       placeholder="Search articles..."
+                       value="{{ search }}">
+
+            </div>
+
+            <div class="col-md-4 mb-2">
+
+                <select name="category_id"
+                        class="form-control">
+
+                    <option value="">
+                        All Categories
+                    </option>
+
+                    {% for category in categories %}
+
+                    <option value="{{ category.id }}"
+                            {% if selected_category_id==category.id %}selected{% endif %}>
+                        {{ category.category }}
+                    </option>
+
+                    {% endfor %}
+
+                </select>
+
+            </div>
+
+            <div class="col-md-3 mb-2">
+
+                <button type="submit"
+                        class="btn btn-primary btn-block">
+
+                    Search
+
+                </button>
+
+            </div>
+
+        </div>
+
+    </form>
+
+</div>
+
+<div class="row">
+
+    {% if articles %}
+
+    {% for article in articles %}
+
+    <div class="col-md-6 mb-4">
+
+        <div class="article-card">
+
+            <h5>
+                {{ article.title }}
+            </h5>
+
+            <p>
+                {{ article.content[:180] }}
+                {% if article.content|length > 180 %}...{% endif %}
+            </p>
+
+            <div class="article-meta">
+
+                {% if article.category %}
+
+                <span class="badge badge-primary">
+                    {{ article.category.category }}
+                </span>
+
+                {% endif %}
+
+                {% if article.tags %}
+
+                <span class="badge badge-secondary">
+                    {{ article.tags }}
+                </span>
+
+                {% endif %}
+
+            </div>
+
+            <div class="mt-3">
+
+                <a href="{{ url_for('customer.view_knowledge_article', id=article.id) }}"
+                   class="btn btn-outline-primary btn-sm">
+
+                    Read Article
+
+                </a>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    {% endfor %}
+
+    {% else %}
+
+    <div class="col-12">
+
+        <div class="alert alert-info">
+
+            No knowledge articles found.
+
+        </div>
+
+    </div>
+
+    {% endif %}
+
+</div>
+
+{% endblock %}

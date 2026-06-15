@@ -1,0 +1,230 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}Agent Contributions{% endblock %}
+{% endblock %}
+
+{% block text %}
+Track agent participation, submitted solutions, approvals, and knowledge contributions.
+{% endblock %}
+
+{% block content %}
+
+<div class="max-w-1000">
+    {% include 'includes/alert.html' %}
+</div>
+
+<div class="content-box content-lighten">
+
+    <h4 class="mb-4">
+        Agent Contributions
+    </h4>
+
+    {% if contributions %}
+
+    <div class="table-responsive">
+
+        <table class="table table-striped table-borderless">
+
+            <thead>
+
+                <tr>
+                    <th>Agent</th>
+                    <th>Total Solutions</th>
+                    <th>Approved</th>
+                    <th>Pending</th>
+                    <th>Rejected</th>
+                    <th>Total Views</th>
+                    <th>Total Reuse</th>
+                    <th>Contribution Score</th>
+                </tr>
+
+            </thead>
+
+            <tbody>
+
+                {% for item in contributions %}
+
+                {% set score =
+                (item.approved_solutions * 10)
+                + item.total_reuse
+                + item.total_views
+                %}
+
+                <tr>
+
+                    <td>
+
+                        <strong>
+                            {{ item.agent.name }}
+                        </strong>
+
+                        <br>
+
+                        <small class="text-muted">
+                            {{ item.agent.email }}
+                        </small>
+
+                    </td>
+
+                    <td>
+
+                        <span class="badge badge-primary">
+                            {{ item.total_solutions }}
+                        </span>
+
+                    </td>
+
+                    <td>
+
+                        <span class="badge badge-success">
+                            {{ item.approved_solutions }}
+                        </span>
+
+                    </td>
+
+                    <td>
+
+                        <span class="badge badge-warning">
+                            {{ item.pending_solutions }}
+                        </span>
+
+                    </td>
+
+                    <td>
+
+                        <span class="badge badge-danger">
+                            {{ item.rejected_solutions }}
+                        </span>
+
+                    </td>
+
+                    <td>
+
+                        <span class="badge badge-info">
+                            {{ item.total_views }}
+                        </span>
+
+                    </td>
+
+                    <td>
+
+                        <span class="badge badge-secondary">
+                            {{ item.total_reuse }}
+                        </span>
+
+                    </td>
+
+                    <td>
+
+                        {% if score >= 100 %}
+
+                        <span class="badge badge-success">
+                            Expert Contributor
+                        </span>
+
+                        {% elif score >= 50 %}
+
+                        <span class="badge badge-primary">
+                            Top Contributor
+                        </span>
+
+                        {% elif score >= 20 %}
+
+                        <span class="badge badge-info">
+                            Active Contributor
+                        </span>
+
+                        {% else %}
+
+                        <span class="badge badge-secondary">
+                            Contributor
+                        </span>
+
+                        {% endif %}
+
+                        <br>
+
+                        <small>
+                            Score: {{ score }}
+                        </small>
+
+                    </td>
+
+                </tr>
+
+                {% endfor %}
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+    {% else %}
+
+    <div class="text-center py-5">
+
+        <h5>
+            No contribution data available
+        </h5>
+
+        <p class="text-muted mb-0">
+            Agent solution submissions will appear here.
+        </p>
+
+    </div>
+
+    {% endif %}
+
+</div>
+
+<div class="content-box content-lighten mt-4">
+
+    <h5 class="mb-3">
+        Contribution Ranking Guide
+    </h5>
+
+    <div class="row">
+
+        <div class="col-md-3 mb-3">
+            <div class="card border-success">
+                <div class="card-body text-center">
+                    <h6>Expert Contributor</h6>
+                    <small>100+ points</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-3">
+            <div class="card border-primary">
+                <div class="card-body text-center">
+                    <h6>Top Contributor</h6>
+                    <small>50+ points</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-3">
+            <div class="card border-info">
+                <div class="card-body text-center">
+                    <h6>Active Contributor</h6>
+                    <small>20+ points</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-3">
+            <div class="card border-secondary">
+                <div class="card-body text-center">
+                    <h6>Contributor</h6>
+                    <small>Below 20 points</small>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+</div>
+
+{% endblock %}

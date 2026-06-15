@@ -1,0 +1,227 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}Active Support Chats{% endblock %}
+{% endblock %}
+
+{% block text %}
+    Monitor all live support conversations and support operations.
+{% endblock %}
+
+{% block content %}
+
+<style>
+    .live-card {
+        border: 1px solid #e5e7eb;
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 20px;
+        background: #ffffff;
+        transition: 0.2s ease;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.05);
+    }
+
+        .live-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 28px rgba(0,0,0,0.08);
+        }
+
+    .live-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 14px;
+    }
+
+    .live-subject {
+        font-size: 18px;
+        font-weight: 700;
+        color: #111827;
+    }
+
+    .live-meta {
+        font-size: 13px;
+        color: #6b7280;
+        margin-top: 4px;
+    }
+
+    .live-badges {
+        margin-top: 14px;
+        margin-bottom: 16px;
+    }
+
+        .live-badges .badge {
+            margin-right: 6px;
+            padding: 7px 10px;
+            font-size: 12px;
+        }
+
+    .live-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .live-status {
+        font-size: 14px;
+        color: #374151;
+    }
+
+    .online-dot {
+        width: 10px;
+        height: 10px;
+        background: #10b981;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 6px;
+    }
+
+    .chat-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .last-update {
+        margin-top: 10px;
+        font-size: 12px;
+        color: #9ca3af;
+    }
+</style>
+
+<div class="max-w-1000">
+
+    {% if active_tickets %}
+
+    {% for ticket in active_tickets %}
+
+    <div class="live-card">
+
+        <div class="live-top">
+
+            <div>
+                <div class="live-subject">
+                    {{ ticket.subject }}
+                </div>
+
+                <div class="live-meta">
+                    Ticket #{{ ticket.number }}
+                    |
+                    Customer:
+                    {{ ticket.author.name if ticket.author else 'Unknown customer' }}
+                </div>
+            </div>
+
+            <div>
+                {% if ticket.status and ticket.status.status == 'Escalated' %}
+                <span class="badge badge-danger">Escalated</span>
+                {% elif ticket.owner %}
+                <span class="badge badge-success">Active Support</span>
+                {% else %}
+                <span class="badge badge-warning">Waiting for Staff</span>
+                {% endif %}
+            </div>
+
+        </div>
+
+        <div class="live-badges">
+
+            <span class="badge badge-primary">
+                {{ ticket.category.category if ticket.category else 'No category' }}
+            </span>
+
+            {% set priority_name = ticket.priority.priority if ticket.priority else 'Low' %}
+
+            {% if priority_name == 'Urgent' %}
+            <span class="badge badge-danger">Urgent</span>
+            {% elif priority_name == 'High' %}
+            <span class="badge badge-warning">High</span>
+            {% elif priority_name == 'Medium' %}
+            <span class="badge badge-info">Medium</span>
+            {% else %}
+            <span class="badge badge-secondary">Low</span>
+            {% endif %}
+
+            <span class="badge badge-dark">
+                {{ ticket.status.status if ticket.status else 'Unknown' }}
+            </span>
+
+        </div>
+
+        <div class="live-footer">
+
+            <div class="live-status">
+
+                {% if ticket.owner %}
+
+                <span class="online-dot"></span>
+                Assigned to:
+                <strong>{{ ticket.owner.name }}</strong>
+
+                {% else %}
+
+                <span class="text-danger">
+                    No support staff assigned
+                </span>
+
+                {% endif %}
+
+                <div class="last-update">
+                    Last updated:
+                    {{ (ticket.updated_at or ticket.created_at).strftime('%d %b %Y, %H:%M %p') }}
+                </div>
+
+            </div>
+
+            <div class="chat-actions">
+
+                <a href="{{ url_for('admin.view_ticket', id=ticket.id) }}"
+                   class="btn btn-primary btn-sm">
+                    Open Chat
+                </a>
+
+                {% if not ticket.owner %}
+
+                <form action="{{ url_for('admin.claim_ticket', id=ticket.id) }}"
+                      method="POST">
+
+                    <input type="hidden"
+                           name="csrf_token"
+                           value="{{ csrf_token() }}">
+
+                    <button type="submit"
+                            class="btn btn-success btn-sm">
+                        Join Chat
+                    </button>
+
+                </form>
+
+                {% endif %}
+
+            </div>
+
+        </div>
+
+    </div>
+
+    {% endfor %}
+
+    {% else %}
+
+    <div class="content-box content-lighten text-center py-5">
+
+        <h5>No active chats right now</h5>
+
+        <p class="text-muted mb-0">
+            All support tickets are currently closed.
+        </p>
+
+    </div>
+
+    {% endif %}
+
+</div>
+
+{% endblock %}

@@ -1,0 +1,130 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}System Health{% endblock %}
+{% endblock %}
+
+{% block text %}
+Monitor database connection, AI configuration, ticket records, notifications, logs, uploads, and maintenance status.
+{% endblock %}
+
+{% block content %}
+
+<div class="max-w-1000">
+    {% include 'includes/alert.html' %}
+</div>
+
+<style>
+    .health-card {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 16px;
+        padding: 22px;
+        height: 100%;
+        box-shadow: 0 5px 14px rgba(0,0,0,0.04);
+        text-align: center;
+    }
+
+        .health-card h2 {
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .health-card small {
+            color: #6b7280;
+        }
+
+    .health-item {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        padding: 18px;
+        margin-bottom: 14px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+    }
+
+    .health-ok {
+        border-left: 5px solid #28a745;
+    }
+
+    .health-error {
+        border-left: 5px solid #dc3545;
+    }
+</style>
+
+<div class="content-box content-lighten">
+
+    <h4 class="mb-4">
+        System Health Dashboard
+    </h4>
+
+    <div class="row">
+
+        <div class="col-md-4 mb-3">
+            <div class="health-card">
+                <h2>{{ total_checks }}</h2>
+                <small>Total Checks</small>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-3">
+            <div class="health-card">
+                <h2>{{ healthy_checks }}</h2>
+                <small>Healthy Services</small>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-3">
+            <div class="health-card">
+                <h2>{{ issue_checks }}</h2>
+                <small>Issues Found</small>
+            </div>
+        </div>
+
+    </div>
+
+</div>
+
+<div class="content-box content-lighten mt-4">
+
+    <h5 class="mb-3">
+        Live System Checks
+    </h5>
+
+    {% for check in health_checks %}
+
+    <div class="health-item {% if check.healthy %}health-ok{% else %}health-error{% endif %}">
+
+        <div class="d-flex justify-content-between flex-wrap">
+
+            <div>
+                <h6 class="mb-1">
+                    {{ check.name }}
+                </h6>
+
+                <p class="text-muted mb-0">
+                    {{ check.details }}
+                </p>
+            </div>
+
+            <div>
+                {% if check.healthy %}
+                <span class="badge badge-success">
+                    {{ check.status }}
+                </span>
+                {% else %}
+                <span class="badge badge-danger">
+                    {{ check.status }}
+                </span>
+                {% endif %}
+            </div>
+
+        </div>
+
+    </div>
+
+    {% endfor %}
+
+</div>
+
+{% endblock %}

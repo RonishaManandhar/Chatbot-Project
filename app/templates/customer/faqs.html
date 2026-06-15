@@ -1,0 +1,120 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}FAQs{% endblock %}
+{% endblock %}
+
+{% block text %}
+    Browse help articles and frequently asked questions.
+{% endblock %}
+
+{% block content %}
+
+<div class="max-w-1000">
+
+    <div class="content-box content-lighten mb-4">
+
+        <div class="form-group mb-0">
+
+            <input type="text"
+                   id="faqSearch"
+                   class="form-control"
+                   placeholder="Search FAQs...">
+
+        </div>
+
+    </div>
+
+    {% for category in categories %}
+
+    {% set active_faqs = category.faqs | selectattr('is_active', 'equalto', True) | list %}
+
+    {% if active_faqs|length > 0 %}
+
+    <div class="content-box content-lighten mb-4 faq-category">
+
+        <h4 class="mb-4">
+            {{ category.category }}
+        </h4>
+
+        <div class="accordion" id="accordion{{ category.id }}">
+
+            {% for faq in active_faqs %}
+
+            <div class="card mb-2 faq-item">
+
+                <div class="card-header">
+
+                    <button class="btn btn-link text-left w-100"
+                            type="button"
+                            data-toggle="collapse"
+                            data-target="#faq{{ faq.id }}">
+
+                        <strong>
+                            {{ faq.question }}
+                        </strong>
+
+                    </button>
+
+                </div>
+
+                <div id="faq{{ faq.id }}"
+                     class="collapse"
+                     data-parent="#accordion{{ category.id }}">
+
+                    <div class="card-body">
+
+                        <div class="mb-2">
+                            {{ faq.answer|safe }}
+                        </div>
+
+                        {% if faq.tags %}
+                        <small class="text-muted">
+                            Tags: {{ faq.tags }}
+                        </small>
+                        {% endif %}
+
+                    </div>
+
+                </div>
+
+            </div>
+
+            {% endfor %}
+
+        </div>
+
+    </div>
+
+    {% endif %}
+
+    {% endfor %}
+
+</div>
+
+{% endblock %}
+
+{% block script %}
+{{ super() }}
+
+<script>document.getElementById("faqSearch").addEventListener("keyup", function () {
+
+    let value = this.value.toLowerCase();
+
+    let faqItems = document.querySelectorAll(".faq-item");
+
+    faqItems.forEach(function(item) {
+
+        let text = item.innerText.toLowerCase();
+
+        if (text.includes(value)) {
+            item.style.display = "";
+        } else {
+            item.style.display = "none";
+        }
+
+    });
+
+});</script>
+
+{% endblock %}

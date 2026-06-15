@@ -1,0 +1,747 @@
+﻿{% from 'macros/render_input.html' import render_input %}
+{% from 'macros/render_select.html' import render_select %}
+
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block style %}
+{{ super() }}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/froala-editor/css/froala_editor.pkgd.min.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/froala-editor/css/froala_style.min.css') }}">
+
+<style>
+    .support-chat-shell {
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        overflow: hidden;
+        background: #ffffff;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+    }
+
+    .support-chat-header {
+        background: #111827;
+        color: white;
+        padding: 14px 18px;
+    }
+
+        .support-chat-header strong {
+            display: block;
+            font-size: 16px;
+        }
+
+        .support-chat-header small {
+            display: block;
+            margin-top: 3px;
+            opacity: 0.8;
+        }
+
+    .support-chat-body {
+        height: 390px;
+        overflow-y: auto;
+        padding: 16px;
+        background: #f8fafc;
+    }
+
+    .chat-row {
+        display: flex;
+        margin-bottom: 12px;
+    }
+
+    .chat-left {
+        justify-content: flex-start;
+    }
+
+    .chat-right {
+        justify-content: flex-end;
+    }
+
+    .chat-bubble {
+        max-width: 72%;
+        padding: 10px 13px;
+        border-radius: 16px;
+        font-size: 14px;
+        line-height: 1.45;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        word-wrap: break-word;
+    }
+
+    .customer-bubble {
+        background: #ffffff;
+        color: #111827;
+        border: 1px solid #e5e7eb;
+        border-bottom-left-radius: 5px;
+    }
+
+    .agent-bubble {
+        background: #2563eb;
+        color: white;
+        border-bottom-right-radius: 5px;
+    }
+
+    .system-bubble {
+        background: #ecfdf5;
+        color: #065f46;
+        border: 1px solid #a7f3d0;
+        max-width: 85%;
+    }
+
+    .chat-time {
+        margin-top: 5px;
+        font-size: 11px;
+        opacity: 0.7;
+    }
+
+    .support-chat-footer {
+        display: flex;
+        gap: 10px;
+        padding: 12px;
+        border-top: 1px solid #e5e7eb;
+        background: white;
+    }
+
+        .support-chat-footer textarea {
+            resize: none;
+            min-height: 48px;
+        }
+
+    .enter-chat-note {
+        color: #6b7280;
+        font-size: 13px;
+        margin-left: 8px;
+    }
+</style>
+{% endblock %}
+
+{% block header %}
+    {% block title %}Ticket Information{% endblock %}
+{% endblock %}
+
+{% block text %}
+    Review ticket details, update status, or enter live support chat.
+{% endblock %}
+
+{% block button %}
+<button type="button" class="btn btn-danger btn-sm" data-toggle="modal" data-target="#deleteModal">
+    Delete
+</button>
+{% endblock %}
+
+{% block content %}
+
+<div class="max-w-1000">
+    {% include 'includes/alert.html' %}
+</div>
+
+<div class="content-box mb-3 content-lighten max-w-1000">
+
+    <form action="{{ url_for('agent.view_ticket', id=ticket.id) }}" method="POST">
+        {{ form.csrf_token }}
+
+        <table class="table table-striped table-borderless">
+            <tbody>
+
+                <tr>
+                    <td>Date Created</td>
+                    <td>{{ ticket.created_at.strftime('%d %b %Y, %H:%M %p') }}</td>
+                </tr>
+
+                <tr>
+                    <td class="w-25">Number</td>
+                    <td>{{ ticket.number }}</td>
+                </tr>
+
+                <tr>
+                    <td>Author</td>
+                    <td>{{ ticket.author.name }}</td>
+                </tr>
+
+                <tr>
+                    <td>E-mail address</td>
+                    <td>
+                        <a href="mailto:{{ ticket.author.email }}">
+                            {{ ticket.author.email }}
+                        </a>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td>Subject</td>
+                    <td>{{ ticket.subject }}</td>
+                </tr>
+
+                <tr>
+                    <td>Body</td>
+                    <td>
+                        <div class="fr-view">
+                            {{ ticket.body|safe }}
+                        </div>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td>Assignee</td>
+                    <td>
+                        <div class="form-group row">
+                            <div class="col-md-5">
+                                {% if ticket.status_id == 4 %}
+                                {{ form.owner(class="form-control", disabled=True) }}
+                                {% else %}
+                                {{ render_select(form.owner, "Assignee is required") }}
+                                {% endif %}
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td>Category</td>
+                    <td>
+                        {% if ticket.category %}
+                        {{ ticket.category.category }}
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                </tr>
+
+                <tr>
+                    <td>Priority</td>
+                    <td>
+                        <div class="form-group row">
+                            <div class="col-md-5">
+                                {% if ticket.status_id == 4 %}
+                                {{ form.priority(class="form-control", disabled=True) }}
+                                {% else %}
+                                {{ render_select(form.priority, "Priority is required") }}
+                                {% endif %}
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td>Status</td>
+                    <td>
+                        <div class="form-group row">
+                            <div class="col-md-5">
+                                {% if ticket.status_id == 4 %}
+                                {{ form.status(class="form-control", disabled=True) }}
+                                <small class="text-muted">
+                                    Closed tickets cannot be edited. Reopen the ticket first.
+                                </small>
+                                {% else %}
+                                {{ render_select(form.status, "Status is required") }}
+                                {% endif %}
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td>Attachments</td>
+                    <td id="ticketAttachmentList">
+
+                        {% if ticket.file_link %}
+                        <div class="mb-2 attachment-item">
+                            <a href="{{ url_for('agent.download_attachment', id=ticket.author.id, filename=ticket.file_link) }}">
+                                {{ ticket.orig_file }}
+                            </a>
+                        </div>
+                        {% endif %}
+
+                        {% set attachment_comments = [] %}
+
+                        {% for comment in comments %}
+                        {% if 'Attachment uploaded:' in comment.comment %}
+                        {% set _ = attachment_comments.append(comment) %}
+                        {% endif %}
+                        {% endfor %}
+
+                        {% if attachment_comments|length > 0 %}
+
+                        {% for attachment in attachment_comments %}
+                        <div class="mb-2 attachment-item">
+                            {{ attachment.comment|safe }}
+
+                            <small class="text-muted d-block">
+                                Uploaded by {{ attachment.user.name }}
+                                •
+                                {{ attachment.created_at.strftime('%d %b %Y %H:%M') }}
+                            </small>
+                        </div>
+                        {% endfor %}
+
+                        {% elif not ticket.file_link %}
+
+                        <span class="text-muted" id="noAttachmentText">
+                            No attachment
+                        </span>
+
+                        {% endif %}
+
+                    </td>
+                </tr>
+
+                <tr>
+                    <td></td>
+                    <td>
+                        {% if ticket.status_id != 4 %}
+                        <button type="submit" class="btn btn-primary btn-sm">
+                            Update
+                        </button>
+                        {% else %}
+                        <span class="text-muted mr-2">
+                            This ticket is closed.
+                        </span>
+                        {% endif %}
+
+                        <a href="{{ url_for('agent.new_tickets') }}" class="btn btn-secondary btn-sm">
+                            Back
+                        </a>
+
+                        {% if ticket.status and ticket.status.status != 'Closed' and ticket.status.status != 'Escalated' %}
+                        <button type="submit"
+                                form="escalateTicketForm"
+                                class="btn btn-warning btn-sm ml-2">
+                            Escalate to Admin
+                        </button>
+                        {% endif %}
+
+                        <button type="button" id="enterChatBtn" class="btn btn-dark btn-sm ml-2">
+                            Enter Chat
+                        </button>
+
+                        <span class="enter-chat-note">
+                            Open live conversation with customer
+                        </span>
+                    </td>
+                </tr>
+
+            </tbody>
+        </table>
+    </form>
+
+    {% if ticket.status and ticket.status.status != 'Closed' and ticket.status.status != 'Escalated' %}
+    <form id="escalateTicketForm"
+          action="{{ url_for('agent.escalate_ticket', id=ticket.id) }}"
+          method="POST"
+          style="display:none;">
+
+        <input type="hidden"
+               name="csrf_token"
+               value="{{ csrf_token() }}">
+    </form>
+    {% endif %}
+
+</div>
+
+{% if ticket.status_id == 4 %}
+<div class="content-box mb-3 content-lighten max-w-1000 text-center">
+    <p class="mb-2">
+        This ticket is currently closed. Reopen it before making changes or continuing the chat.
+    </p>
+
+    <a href="{{ url_for('agent.reopen_ticket', id=ticket.id) }}"
+       class="btn btn-warning btn-sm">
+        Reopen Ticket
+    </a>
+</div>
+{% endif %}
+
+<div id="supportChatBox"
+     class="content-box mb-3 content-lighten max-w-1000"
+     style="display:none;">
+
+    <div class="support-chat-shell">
+
+        <div class="support-chat-header">
+            <strong>Live Support Chat</strong>
+            <small>
+                Ticket #{{ ticket.number }}
+                ·
+                Customer: {{ ticket.author.name }}
+                ·
+                Status: {{ ticket.status.status if ticket.status else '-' }}
+            </small>
+        </div>
+
+        <div id="live-comments" class="support-chat-body">
+            {% for comment in comments %}
+
+            {% set comment_text = comment.comment|string %}
+
+            {% if comment_text.startswith('✅')
+            or comment_text.startswith('🚨')
+            or comment_text.startswith('Ticket reopened')
+            or comment_text.startswith('Ticket closed')
+            or comment_text.startswith('Ticket escalated')
+            or comment_text.startswith('<strong>
+                Current AI / FAQ Conversation')
+                or comment_text.startswith('<strong>
+                    Previous AI / FAQ Conversation') %}
+
+                    <div class="chat-row chat-left">
+                        <div class="chat-bubble system-bubble">
+                            <span>{{ comment.comment|safe }}</span>
+                            <div class="chat-time">
+                                {{ comment.created_at.strftime('%d %b %Y, %H:%M') }}
+                            </div>
+                        </div>
+                    </div>
+
+                    {% elif comment.user.role == 'Customer' %}
+
+                    <div class="chat-row chat-left">
+                        <div class="chat-bubble customer-bubble">
+                            <strong>{{ comment.user.name }}</strong><br>
+                            <span>{{ comment.comment|safe }}</span>
+                            <div class="chat-time">
+                                {{ comment.created_at.strftime('%d %b %Y, %H:%M') }}
+                            </div>
+                        </div>
+                    </div>
+
+                    {% else %}
+
+                    <div class="chat-row chat-right">
+                        <div class="chat-bubble agent-bubble">
+                            <strong>{{ comment.user.name }}</strong><br>
+                            <span>{{ comment.comment|safe }}</span>
+                            <div class="chat-time">
+                                {{ comment.created_at.strftime('%d %b %Y, %H:%M') }}
+                            </div>
+                        </div>
+                    </div>
+
+                    {% endif %}
+
+                    {% endfor %}
+        </div>
+
+        {% if ticket.status and ticket.status.status != 'Closed' %}
+        <form action="{{ url_for('agent.comment_ticket', id=ticket.id) }}"
+              method="POST"
+              class="support-chat-footer"
+              id="chatForm">
+
+            {{ comment_form.csrf_token }}
+
+            <textarea name="comment"
+                      id="comment"
+                      class="form-control"
+                      placeholder="Type your reply to the customer..."
+                      rows="2"
+                      required></textarea>
+
+            <button type="submit" class="btn btn-primary" id="sendChatBtn">
+                Send
+            </button>
+        </form>
+        {% else %}
+        <div class="p-3 bg-warning text-dark">
+            This ticket has been closed. Chat is read-only. Reopen it to continue.
+        </div>
+        {% endif %}
+
+    </div>
+</div>
+
+<div class="modal fade"
+     id="deleteModal"
+     tabindex="-1"
+     role="dialog"
+     aria-labelledby="deleteModalLabel"
+     aria-hidden="true">
+
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteModalLabel">
+                    Delete Confirmation
+                </h5>
+
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+
+            <div class="modal-body">
+                <p>
+                    Are you sure you want to delete this ticket? This action cannot be undone.
+                </p>
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">
+                    Close
+                </button>
+
+                <form action="{{ url_for('agent.delete_ticket', uid=ticket.author.id, tid=ticket.id) }}" method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="submit" class="btn btn-danger" value="Delete">
+                </form>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block script %}
+{{ super() }}
+
+<script src="{{ url_for('static', filename='js/live_chat_core.js') }}"></script>
+
+<script>
+const enterChatBtn = document.getElementById("enterChatBtn");
+const supportChatBox = document.getElementById("supportChatBox");
+const liveComments = document.getElementById("live-comments");
+const chatForm = document.getElementById("chatForm");
+const commentInput = document.getElementById("comment");
+const sendChatBtn = document.getElementById("sendChatBtn");
+const attachmentContainer = document.getElementById("ticketAttachmentList");
+
+const socket = LiveChatCore.initSocket();
+
+const ticketId = "{{ ticket.id }}";
+const currentUserRole = "{{ current_user.role }}";
+const currentUserName = "{{ current_user.name }}";
+
+function openChatBox() {
+    if (supportChatBox) {
+        supportChatBox.style.display = "block";
+    }
+
+    if (enterChatBtn) {
+        enterChatBtn.style.display = "none";
+    }
+
+    setTimeout(function () {
+        LiveChatCore.scrollBottom(liveComments);
+    }, 100);
+}
+
+function addChatBubble(message, side, name, type) {
+    LiveChatCore.addChatBubble({
+        container: liveComments,
+        message: message,
+        side: side,
+        name: name || "",
+        type: type || "normal",
+        html: true
+    });
+}
+
+function isSameTicketEvent(data) {
+    if (!data || !data.ticket_id) {
+        return true;
+    }
+
+    return Number(data.ticket_id) === Number(ticketId);
+}
+
+function isSystemMessage(message) {
+    return (
+        message.startsWith("✅") ||
+        message.startsWith("🚨") ||
+        message.startsWith("Ticket reopened") ||
+        message.startsWith("Ticket closed") ||
+        message.startsWith("Ticket escalated") ||
+        (message.startsWith("<strong>Current AI / FAQ Conversation") || message.startsWith("<strong>Previous AI / FAQ Conversation"))
+    );
+}
+
+function addAttachmentToTicketDetails(data) {
+    if (!attachmentContainer) return;
+
+    const message = String(data.message || "");
+
+    if (
+        data.is_attachment !== true &&
+        !message.includes("Attachment uploaded:")
+    ) {
+        return;
+    }
+
+    if (attachmentContainer.innerHTML.includes(message)) {
+        return;
+    }
+
+    const noAttachmentText = document.getElementById("noAttachmentText");
+
+    if (noAttachmentText) {
+        noAttachmentText.remove();
+    }
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "mb-2 attachment-item";
+
+    wrapper.innerHTML = `
+        ${message}
+        <small class="text-muted d-block">
+            Uploaded by ${data.sender_name || "User"}
+        </small>
+    `;
+
+    attachmentContainer.appendChild(wrapper);
+}
+
+function reloadTicketSoon() {
+    setTimeout(function () {
+        window.location.reload();
+    }, 800);
+}
+
+if (enterChatBtn) {
+    enterChatBtn.addEventListener("click", openChatBox);
+}
+
+try {
+    const params = new URLSearchParams(window.location.search);
+
+    if (params.get("chat") === "1") {
+        openChatBox();
+    }
+} catch (e) {}
+
+socket.on("connect", function () {
+    console.log("✅ Agent ticket socket connected");
+    LiveChatCore.joinTicketRoom(ticketId);
+});
+
+socket.on("new_comment", function (data) {
+    if (!data || !data.message) return;
+
+    if (!isSameTicketEvent(data)) {
+        return;
+    }
+
+    const senderRole = String(data.sender_role || "");
+    const senderName = String(data.sender_name || "");
+    const message = String(data.message || "");
+
+    addAttachmentToTicketDetails(data);
+
+    if (
+        senderRole === currentUserRole &&
+        senderName === currentUserName
+    ) {
+        return;
+    }
+
+    openChatBox();
+
+    if (isSystemMessage(message)) {
+        addChatBubble(message, "left", "System", "system");
+    }
+    else if (senderRole.toLowerCase() === "customer") {
+        addChatBubble(message, "left", senderName || "Customer", "normal");
+    }
+    else {
+        addChatBubble(message, "right", senderName || "Support", "normal");
+    }
+});
+
+socket.on("agent_joined", function (data) {
+    if (!data || !data.message) return;
+
+    if (!isSameTicketEvent(data)) {
+        return;
+    }
+
+    openChatBox();
+    addChatBubble(data.message, "left", "System", "system");
+});
+
+socket.on("ticket_closed", function (data) {
+    if (!data || !data.message) return;
+
+    if (!isSameTicketEvent(data)) {
+        return;
+    }
+
+    openChatBox();
+    addChatBubble(data.message, "left", "System", "system");
+    reloadTicketSoon();
+});
+
+socket.on("ticket_reopened", function (data) {
+    if (!data || !data.message) return;
+
+    if (!isSameTicketEvent(data)) {
+        return;
+    }
+
+    openChatBox();
+    addChatBubble(data.message, "left", "System", "system");
+    reloadTicketSoon();
+});
+
+socket.on("ticket_escalated", function (data) {
+    if (!data || !data.message) return;
+
+    if (!isSameTicketEvent(data)) {
+        return;
+    }
+
+    openChatBox();
+    addChatBubble(data.message, "left", "System", "system");
+    reloadTicketSoon();
+});
+
+if (chatForm) {
+    chatForm.addEventListener("submit", async function (e) {
+        e.preventDefault();
+
+        const message = (commentInput.value || "").trim();
+
+        if (!message) return;
+
+        if (sendChatBtn) {
+            sendChatBtn.disabled = true;
+            sendChatBtn.innerText = "Sending...";
+        }
+
+        try {
+            const formData = new FormData(chatForm);
+
+            const response = await fetch(chatForm.action, {
+                method: "POST",
+                body: formData
+            });
+
+            const result = await response.json();
+
+            if (result.success === true) {
+                addChatBubble(message, "right", "You", "normal");
+                commentInput.value = "";
+            }
+            else {
+                alert(result.message || "Message could not be sent.");
+            }
+        }
+        catch (err) {
+            console.error("Chat send error:", err);
+            alert("Message could not be sent.");
+        }
+        finally {
+            if (sendChatBtn) {
+                sendChatBtn.disabled = false;
+                sendChatBtn.innerText = "Send";
+            }
+        }
+    });
+}
+
+if (commentInput && chatForm) {
+    commentInput.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            chatForm.requestSubmit();
+        }
+    });
+}
+</script>
+
+{% endblock %}

@@ -1,0 +1,221 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}Dashboard{% endblock %}
+{% endblock %}
+
+{% block content %}
+
+<div class="max-w-1000">
+
+    <!-- STATS -->
+    <div class="row">
+
+        <div class="col-md-4 col-xl-3">
+            <div class="card bg-clr-blue order-card">
+                <div class="card-block">
+                    <h6 class="m-b-20">Open</h6>
+
+                    <h2 class="text-right">
+                        <i class="fa fa-envelope-open f-left"></i>
+                        <span>{{ open|length }}</span>
+                    </h2>
+
+                    <p class="m-b-0">Total open tickets</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 col-xl-3">
+            <div class="card bg-clr-green order-card">
+                <div class="card-block">
+                    <h6 class="m-b-20">Solved</h6>
+
+                    <h2 class="text-right">
+                        <i class="fa fa-thumbs-up f-left"></i>
+                        <span>{{ solved|length }}</span>
+                    </h2>
+
+                    <p class="m-b-0">Total solved tickets</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 col-xl-3">
+            <div class="card bg-clr-yellow order-card">
+                <div class="card-block">
+                    <h6 class="m-b-20">Pending</h6>
+
+                    <h2 class="text-right">
+                        <i class="fa fa-hourglass-end f-left"></i>
+                        <span>{{ pending|length }}</span>
+                    </h2>
+
+                    <p class="m-b-0">Total pending tickets</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 col-xl-3">
+            <div class="card bg-clr-pink order-card">
+                <div class="card-block">
+                    <h6 class="m-b-20">Closed</h6>
+
+                    <h2 class="text-right">
+                        <i class="fa fa-envelope f-left"></i>
+                        <span>{{ closed|length }}</span>
+                    </h2>
+
+                    <p class="m-b-0">Total closed tickets</p>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- NEED HELP SECTION -->
+    <div class="content-box content-lighten mt-4 p-4">
+
+        <div class="d-flex justify-content-between align-items-center mb-4">
+
+            <div>
+                <h4 class="mb-1">
+                    Need Help?
+                </h4>
+
+                <p class="text-muted mb-0">
+                    Quickly continue your support journey.
+                </p>
+            </div>
+
+        </div>
+
+        <div class="row">
+
+            <!-- CREATE TICKET -->
+            <div class="col-md-6 col-lg-3 mb-3">
+
+                <div class="card h-100 border-0 shadow-sm">
+
+                    <div class="card-body text-center">
+
+                        <div class="mb-3">
+                            <i class="fa fa-plus-circle fa-3x text-primary"></i>
+                        </div>
+
+                        <h5>Create Ticket</h5>
+
+                        <p class="text-muted small">
+                            Open a new support request.
+                        </p>
+
+                        <a href="{{ url_for('customer.create_ticket') }}"
+                           class="btn btn-primary btn-sm">
+
+                            Create
+
+                        </a>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+            <!-- CONTINUE CHAT -->
+            <div class="col-md-6 col-lg-3 mb-3">
+
+                <div class="card h-100 border-0 shadow-sm">
+
+                    <div class="card-body text-center">
+
+                        <div class="mb-3">
+                            <i class="fa fa-comments fa-3x text-success"></i>
+                        </div>
+
+                        <h5>Continue Chat</h5>
+
+                        <p class="text-muted small">
+                            Continue chatting with support.
+                        </p>
+
+                        <a href="{{ url_for('customer.chat_page') }}"
+                           class="btn btn-success btn-sm">
+
+                            Open Chat
+
+                        </a>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+            <!-- MY TICKETS -->
+            <div class="col-md-6 col-lg-3 mb-3">
+
+                <div class="card h-100 border-0 shadow-sm">
+
+                    <div class="card-body text-center">
+
+                        <div class="mb-3">
+                            <i class="fa fa-ticket fa-3x text-warning"></i>
+                        </div>
+
+                        <h5>My Tickets</h5>
+
+                        <p class="text-muted small">
+                            View your active support tickets.
+                        </p>
+
+                        <a href="{{ url_for('customer.my_tickets') }}"
+                           class="btn btn-warning btn-sm text-white">
+
+                            Open
+
+                        </a>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+            <!-- FAQ -->
+            <div class="col-md-6 col-lg-3 mb-3">
+
+                <div class="card h-100 border-0 shadow-sm">
+
+                    <div class="card-body text-center">
+
+                        <div class="mb-3">
+                            <i class="fa fa-book fa-3x text-info"></i>
+                        </div>
+
+                        <h5>FAQs</h5>
+
+                        <p class="text-muted small">
+                            Browse help articles and answers.
+                        </p>
+
+                        <a href="{{ url_for('customer.faqs') }}"
+                           class="btn btn-info btn-sm">
+
+                            Browse
+
+                        </a>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endblock %}

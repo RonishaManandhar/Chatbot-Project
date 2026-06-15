@@ -1,0 +1,188 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}Agent Solutions{% endblock %}
+{% endblock %}
+
+{% block text %}
+Submit reusable solutions that can help future agents and customers.
+{% endblock %}
+
+{% block content %}
+
+<div class="max-w-1000">
+    {% include 'includes/alert.html' %}
+</div>
+
+<div class="content-box content-lighten">
+
+    <h4 class="mb-4">
+        Submit Agent Solution
+    </h4>
+
+    <form method="POST">
+
+        <input type="hidden"
+               name="csrf_token"
+               value="{{ csrf_token() }}">
+
+        <div class="form-group">
+
+            <label>
+                Solution Title
+            </label>
+
+            <input type="text"
+                   name="title"
+                   class="form-control"
+                   required>
+
+        </div>
+
+        <div class="form-group">
+
+            <label>
+                Category
+            </label>
+
+            <select name="category_id"
+                    class="form-control">
+
+                {% for category in categories %}
+
+                <option value="{{ category.id }}">
+                    {{ category.category }}
+                </option>
+
+                {% endfor %}
+
+            </select>
+
+        </div>
+
+        <div class="form-group">
+
+            <label>
+                Tags
+            </label>
+
+            <input type="text"
+                   name="tags"
+                   class="form-control"
+                   placeholder="password, login, billing">
+
+        </div>
+
+        <div class="form-group">
+
+            <label>
+                Solution Details
+            </label>
+
+            <textarea name="solution"
+                      class="form-control"
+                      rows="8"
+                      required></textarea>
+
+        </div>
+
+        <button type="submit"
+                class="btn btn-primary">
+            Submit Solution
+        </button>
+
+    </form>
+
+</div>
+
+<div class="content-box content-lighten mt-4">
+
+    <h4 class="mb-3">
+        My Submitted Solutions
+    </h4>
+
+    {% if solutions %}
+
+    <div class="table-responsive">
+
+        <table class="table table-striped">
+
+            <thead>
+
+                <tr>
+                    <th>Title</th>
+                    <th>Status</th>
+                    <th>Views</th>
+                    <th>Reuse</th>
+                    <th>Created</th>
+                </tr>
+
+            </thead>
+
+            <tbody>
+
+                {% for solution in solutions %}
+
+                <tr>
+
+                    <td>
+                        {{ solution.title }}
+                    </td>
+
+                    <td>
+
+                        {% if solution.status == "Approved" %}
+
+                        <span class="badge badge-success">
+                            Approved
+                        </span>
+
+                        {% elif solution.status == "Rejected" %}
+
+                        <span class="badge badge-danger">
+                            Rejected
+                        </span>
+
+                        {% else %}
+
+                        <span class="badge badge-warning">
+                            Pending
+                        </span>
+
+                        {% endif %}
+
+                    </td>
+
+                    <td>
+                        {{ solution.view_count }}
+                    </td>
+
+                    <td>
+                        {{ solution.reuse_count }}
+                    </td>
+
+                    <td>
+                        {{ solution.created_at.strftime('%d %b %Y') }}
+                    </td>
+
+                </tr>
+
+                {% endfor %}
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+    {% else %}
+
+    <div class="alert alert-info">
+        You have not submitted any solutions yet.
+    </div>
+
+    {% endif %}
+
+</div>
+
+{% endblock %}

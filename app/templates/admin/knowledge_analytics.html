@@ -1,0 +1,257 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}Knowledge Analytics{% endblock %}
+{% endblock %}
+
+{% block text %}
+Monitor FAQ performance, knowledge article growth, article activity, and content usage.
+{% endblock %}
+
+{% block content %}
+
+<div class="max-w-1000">
+    {% include 'includes/alert.html' %}
+</div>
+
+<div class="content-box content-lighten">
+
+    <h4 class="mb-4">
+        Knowledge Analytics
+    </h4>
+
+    <div class="row">
+
+        <div class="col-md-3 mb-3">
+            <div class="card border-primary">
+                <div class="card-body text-center">
+                    <h2>{{ faq_count }}</h2>
+                    <h6>Total FAQs</h6>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-3">
+            <div class="card border-success">
+                <div class="card-body text-center">
+                    <h2>{{ article_count }}</h2>
+                    <h6>Knowledge Articles</h6>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-3">
+            <div class="card border-info">
+                <div class="card-body text-center">
+                    <h2>{{ active_count }}</h2>
+                    <h6>Active Articles</h6>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-3">
+            <div class="card border-secondary">
+                <div class="card-body text-center">
+                    <h2>{{ inactive_count }}</h2>
+                    <h6>Inactive Articles</h6>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+</div>
+
+<div class="row mt-4">
+
+    <div class="col-md-6 mb-4">
+
+        <div class="content-box content-lighten h-100">
+
+            <h5 class="mb-3">
+                Most Viewed Knowledge Articles
+            </h5>
+
+            {% if top_articles %}
+
+            {% for article in top_articles %}
+
+            <div class="d-flex justify-content-between align-items-start border-bottom py-3">
+
+                <div>
+                    <strong>
+                        {{ article.title }}
+                    </strong>
+
+                    <br>
+
+                    <small class="text-muted">
+                        {{ article.category.category if article.category else 'Uncategorised' }}
+                    </small>
+                </div>
+
+                <span class="badge badge-primary">
+                    {{ article.view_count or 0 }} views
+                </span>
+
+            </div>
+
+            {% endfor %}
+
+            {% else %}
+
+            <div class="text-center py-4">
+                <p class="text-muted mb-0">
+                    No knowledge article data yet.
+                </p>
+            </div>
+
+            {% endif %}
+
+        </div>
+
+    </div>
+
+    <div class="col-md-6 mb-4">
+
+        <div class="content-box content-lighten h-100">
+
+            <h5 class="mb-3">
+                Most Viewed FAQs
+            </h5>
+
+            {% if top_faqs %}
+
+            {% for faq in top_faqs %}
+
+            <div class="d-flex justify-content-between align-items-start border-bottom py-3">
+
+                <div>
+                    <strong>
+                        {{ faq.question }}
+                    </strong>
+
+                    <br>
+
+                    <small class="text-muted">
+                        {{ faq.category.category if faq.category else 'Uncategorised' }}
+                    </small>
+                </div>
+
+                <span class="badge badge-success">
+                    {{ faq.view_count or 0 }} views
+                </span>
+
+            </div>
+
+            {% endfor %}
+
+            {% else %}
+
+            <div class="text-center py-4">
+                <p class="text-muted mb-0">
+                    No FAQ data yet.
+                </p>
+            </div>
+
+            {% endif %}
+
+        </div>
+
+    </div>
+
+</div>
+
+<div class="row mt-2">
+
+    <div class="col-md-6 mb-4">
+
+        <div class="content-box content-lighten h-100">
+
+            <h5 class="mb-3">
+                Recently Added Articles
+            </h5>
+
+            {% if recent_articles %}
+
+            {% for article in recent_articles %}
+
+            <div class="border-bottom py-3">
+
+                <strong>
+                    {{ article.title }}
+                </strong>
+
+                <br>
+
+                <small class="text-muted">
+                    {{ article.category.category if article.category else 'Uncategorised' }}
+                    |
+                    {{ article.created_at.strftime('%d %b %Y') if article.created_at else '-' }}
+                </small>
+
+            </div>
+
+            {% endfor %}
+
+            {% else %}
+
+            <div class="text-center py-4">
+                <p class="text-muted mb-0">
+                    No recent articles found.
+                </p>
+            </div>
+
+            {% endif %}
+
+        </div>
+
+    </div>
+
+    <div class="col-md-6 mb-4">
+
+        <div class="content-box content-lighten h-100">
+
+            <h5 class="mb-3">
+                Recently Added FAQs
+            </h5>
+
+            {% if recent_faqs %}
+
+            {% for faq in recent_faqs %}
+
+            <div class="border-bottom py-3">
+
+                <strong>
+                    {{ faq.question }}
+                </strong>
+
+                <br>
+
+                <small class="text-muted">
+                    {{ faq.category.category if faq.category else 'Uncategorised' }}
+                    |
+                    {{ faq.created_at.strftime('%d %b %Y') if faq.created_at else '-' }}
+                </small>
+
+            </div>
+
+            {% endfor %}
+
+            {% else %}
+
+            <div class="text-center py-4">
+                <p class="text-muted mb-0">
+                    No recent FAQs found.
+                </p>
+            </div>
+
+            {% endif %}
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endblock %}

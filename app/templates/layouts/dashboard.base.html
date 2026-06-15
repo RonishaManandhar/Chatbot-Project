@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+    {% block style %}
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/css/bootstrap.min.css') }}">
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/font-awesome/css/font-awesome.css') }}">
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/perfect-scrollbar/css/perfect-scrollbar.css') }}">
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/sidebar.css') }}">
+
+    {% endblock %}
+
+    <title>chatbot &mdash; {% block title %}{% endblock %}</title>
+
+</head>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const toggles = document.querySelectorAll(".sidebar .link-arrow");
+
+        function getKey(toggle) {
+            return "sidebar-" + toggle.textContent.trim().replace(/\s+/g, "-");
+        }
+
+        function restoreSidebarState() {
+            toggles.forEach(function (toggle) {
+                const menu = toggle.nextElementSibling;
+                if (!menu) return;
+
+                const key = getKey(toggle);
+                const savedState = localStorage.getItem(key);
+
+                if (savedState === "open") {
+                    menu.classList.remove("list-hidden");
+                }
+
+                if (savedState === "closed") {
+                    menu.classList.add("list-hidden");
+                }
+            });
+        }
+
+        setTimeout(restoreSidebarState, 150);
+
+        toggles.forEach(function (toggle) {
+            const menu = toggle.nextElementSibling;
+            if (!menu) return;
+
+            toggle.addEventListener("click", function () {
+                setTimeout(function () {
+                    const key = getKey(toggle);
+                    const isOpen = !menu.classList.contains("list-hidden");
+
+                    localStorage.setItem(key, isOpen ? "open" : "closed");
+                }, 150);
+            });
+        });
+    });
+</script>
+
+<body class="body body-lighten">
+
+    <div class="d-flex" id="wrapper">
+
+        {% include 'includes/sidebar.html' %}
+
+        <div class="content">
+
+            {% include 'includes/navbar.html' %}
+
+            <div class="container-fluid">
+
+                <div class="content-box mb-3 content-lighten max-w-1000">
+
+                    <h3>{% block header %}{% endblock %}</h3>
+
+                    <p class="text-muted">{% block text %}{% endblock %}</p>
+
+                    {% block button %}{% endblock %}
+
+                </div>
+
+                {% block content %}{% endblock %}
+
+                {% include 'includes/footer.html' %}
+
+            </div>
+
+        </div>
+
+    </div>
+
+    {% block script %}
+
+    <script src="{{ url_for('static', filename='vendor/jquery/jquery-3.6.0.min.js') }}"></script>
+
+    <script src="{{ url_for('static', filename='vendor/bootstrap/js/bootstrap.bundle.js') }}"></script>
+
+    <script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+
+    <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
+
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+
+    <script src="{{ url_for('static', filename='vendor/perfect-scrollbar/js/perfect-scrollbar.js') }}"></script>
+
+    <script src="{{ url_for('static', filename='vendor/nanobar/nanobar.js') }}"></script>
+
+    <script>
+        $(function () {
+            if (document.querySelector('.list-scrollbar')) {
+                new PerfectScrollbar('.list-scrollbar');
+            }
+
+            var nanobar = new Nanobar();
+            nanobar.go(100);
+        });
+    </script>
+
+    <script>
+        (function () {
+
+            if (typeof io === "undefined") {
+                console.warn("Socket.IO not loaded.");
+                return;
+            }
+
+            const socket = io();
+
+            const currentPath = window.location.pathname;
+            let refreshLocked = false;
+
+            const refreshPages = [
+                "/admin/dashboard",
+                "/admin/new-tickets",
+                "/admin/all-tickets",
+                "/admin/my-tickets",
+                "/admin/active-chats",
+                "/admin/escalated-tickets",
+                "/admin/reports",
+                "/admin/analytics",
+                "/admin/agent-performance",
+                "/admin/agent-reports",
+                "/admin/notifications",
+                "/admin/knowledge-base",
+                "/admin/chat-logs",
+                "/admin/chatbot-settings",
+                "/admin/view-ticket",
+                "/admin/categories",
+                "/admin/priorities",
+                "/admin/statuses",
+                "/admin/create-account",
+                "/admin/my-profile",
+                "/admin/change-password",
+
+                "/agent/dashboard",
+                "/agent/new-tickets",
+                "/agent/my-tickets",
+                "/agent/view-ticket",
+                "/agent/notifications",
+                "/agent/faq-library",
+                "/agent/support-help",
+                "/agent/incident-log",
+                "/agent/issue-log",
+                "/agent/internal-reports",
+                "/agent/categories",
+                "/agent/priorities",
+                "/agent/statuses",
+                "/agent/my-profile",
+                "/agent/knowledge-base",
+                "/agent/agent-solutions",
+                "/agent/suggested-articles",
+                "/agent/contribution-statistics",
+                "/agent/solution-effectiveness",
+                "/agent/knowledge-contributions",
+                "/agent/change-password",
+
+                "/customer/dashboard",
+                "/customer/my-tickets",
+                "/customer/view-ticket",
+                "/customer/notifications",
+                "/customer/faqs",
+                "/customer/chat",
+                "/customer/my-profile",
+                "/customer/change-password"
+            ];
+
+            function shouldRefreshCurrentPage() {
+                return refreshPages.some(function (path) {
+                    return currentPath === path || currentPath.startsWith(path + "/");
+                });
+            }
+
+            let lastRefreshTime = 0;
+
+            function safeRefresh(reason) {
+
+                const softOnlyEvents = [
+                    "customer_live_refresh",
+                    "global_ticket_updated",
+                    "new_comment",
+                    "notification_updated",
+                    "sidebar_counts_updated",
+                    "ticket_created",
+                    "ticket_updated",
+                    "ticket_reopened",
+                    "ticket_closed",
+                    "support_ticket_started",
+                    "ticket_confirmed_solved",
+                    "analytics_updated"
+                ];
+
+                if (currentPath === "/customer/chat" && softOnlyEvents.includes(reason)) {
+                    console.log("✅ Soft refresh customer chat:", reason);
+
+                    window.dispatchEvent(
+                        new CustomEvent("livechat:soft-refresh", {
+                            detail: { reason: reason || "updated" }
+                        })
+                    );
+
+                    refreshLocked = false;
+                    return;
+                }
+
+                const isTicketPage =
+                    currentPath.startsWith("/admin/view-ticket/") ||
+                    currentPath.startsWith("/agent/view-ticket/") ||
+                    currentPath.startsWith("/customer/view-ticket/");
+
+                if (isTicketPage && softOnlyEvents.includes(reason)) {
+                    console.log("✅ Ignored hard refresh on live ticket page:", reason);
+                    refreshLocked = false;
+                    return;
+                }
+
+                if (!shouldRefreshCurrentPage()) {
+                    return;
+                }
+
+                if (refreshLocked) {
+                    return;
+                }
+
+                const now = Date.now();
+
+                if (now - lastRefreshTime < 1000) {
+                    return;
+                }
+
+                lastRefreshTime = now;
+                refreshLocked = true;
+
+                console.log("🔄 Auto refresh triggered:", reason || "update");
+
+                setTimeout(function () {
+                    location.reload();
+                }, 250);
+            }
+
+            socket.on("connect", function () {
+                console.log("✅ Global dashboard socket connected");
+
+                {% if current_user.is_authenticated %}
+                socket.emit("join_notification_room", {
+                    user_id: "{{ current_user.id }}"
+                });
+                {% endif %}
+            });
+
+            const globalRefreshEvents = [
+
+                // =========================
+                // TICKET EVENTS
+                // =========================
+
+                "customer_live_refresh",
+                "global_ticket_updated",
+                "ticket_created",
+                "ticket_updated",
+                "ticket_deleted",
+                "new_comment",
+                "agent_joined",
+                "ticket_closed",
+                "ticket_reopened",
+                "ticket_escalated",
+                "ticket_confirmed_solved",
+                "support_ticket_started",
+
+                // =========================
+                // NOTIFICATION EVENTS
+                // =========================
+
+                "new_notification",
+                "notification_read",
+                "notification_updated",
+
+                // =========================
+                // REPORT EVENTS
+                // =========================
+
+                "agent_report_created_global",
+                "agent_report_updated",
+
+                // =========================
+                // ANALYTICS
+                // =========================
+
+                "analytics_updated",
+                "sidebar_counts_updated"
+            ];
+
+            const featureEvents = [
+                "knowledge_updated",
+                "ai_training_updated",
+                "ai_settings_updated",
+                "agent_knowledge_updated",
+                "users_staff_updated",
+                "system_settings_updated",
+                "system_operations_updated"
+            ];
+
+            globalRefreshEvents.forEach(function (eventName) {
+                socket.on(eventName, function (payload) {
+
+                    console.log("================================");
+                    console.log("REFRESH EVENT:", eventName);
+                    console.log("PAYLOAD:", payload);
+                    console.log("CURRENT PAGE:", currentPath);
+                    console.log("================================");
+
+                    safeRefresh(eventName, payload);
+                });
+            });
+
+            featureEvents.forEach(function (eventName) {
+
+                socket.on(eventName, function (payload) {
+
+                    console.log("================================");
+                    console.log("FEATURE EVENT:", eventName);
+                    console.log("PAYLOAD:", payload);
+                    console.log("CURRENT PAGE:", currentPath);
+                    console.log("================================");
+
+                    window.dispatchEvent(
+                        new CustomEvent("feature-update", {
+                            detail: {
+                                event: eventName,
+                                payload: payload
+                            }
+                        })
+                    );
+
+                    safeRefresh(eventName);
+
+                });
+
+            });
+
+        })();
+    </script>
+
+    {% endblock %}
+
+</body>
+
+</html>
