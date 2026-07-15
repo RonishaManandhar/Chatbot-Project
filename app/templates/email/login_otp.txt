@@ -1,0 +1,10 @@
+Hello {{ user.name }}
+
+Your login verification code:
+
+{{ code }}
+
+This code expires in 10 minutes.
+
+If this was not you,
+please reset your password immediately.

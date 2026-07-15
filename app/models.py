@@ -12,70 +12,174 @@ from werkzeug.security import generate_password_hash
 @login_manager.user_loader
 def load_user(user_id):
     try:
-        return User.query.get(int(user_id))
-    except Exception:
+        return db.session.get(
+            User,
+            int(user_id)
+        )
+
+    except (
+        TypeError,
+        ValueError
+    ):
         return None
     
 
-# Database models
 class User(db.Model, UserMixin):
-	__tablename__ = 'users'
+    __tablename__ = 'users'
 
-	id = db.Column(db.Integer, primary_key=True)
-	name = db.Column(db.String(255), nullable=False)
-	email = db.Column(db.String(255), unique=True, nullable=False)
-	password = db.Column(db.String(255), nullable=False)
-	role = db.Column(db.String(255), nullable=False)
-	image = db.Column(db.String(255), nullable=False)
-	failed_login_attempts = db.Column(db.Integer, default=0, nullable=False)
-	locked_until = db.Column(db.DateTime, nullable=True)
-	
-	created_at = db.Column(db.DateTime(timezone=True), server_default=func.now())
-	updated_at = db.Column(db.DateTime(timezone=True), onupdate=func.now())
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False)
+    email = db.Column(db.String(255), unique=True, nullable=False)
+    password = db.Column(db.String(255), nullable=False)
+    role = db.Column(db.String(255), nullable=False)
+    image = db.Column(db.String(255), nullable=False)
 
-	# Relationship
-	author_tickets = db.relationship('Ticket', foreign_keys='Ticket.author_id',
-		backref='author', cascade='all, delete-orphan', lazy=True)
-	owner_tickets = db.relationship('Ticket', foreign_keys='Ticket.owner_id',
-		backref='owner', passive_deletes=True, lazy=True)
-	
-	comments = db.relationship('Comment', backref='user', cascade='all, delete-orphan', lazy=True)
-	
-	receivers = db.relationship('Notification', foreign_keys='Notification.receiver_id',
-		backref='receiver', cascade='all, delete-orphan', lazy=True)
-	senders = db.relationship('Notification', foreign_keys='Notification.sender_id',
-		backref='sender', cascade='all, delete-orphan', lazy=True)
-	
-	def get_reset_token(self, expires_sec=1800):
-		from flask import current_app
-		s = URLSafeTimedSerializer(current_app.config["SECRET_KEY"])
-		return s.dumps({"user_id": self.id})
+    failed_login_attempts = db.Column(db.Integer, default=0, nullable=False)
+    locked_until = db.Column(db.DateTime, nullable=True)
 
-	@staticmethod
-	def verify_reset_token(token, expires_sec=1800):
-		from flask import current_app
-		s = URLSafeTimedSerializer(current_app.config["SECRET_KEY"])
-		try:
-			data = s.loads(token, max_age=expires_sec)
-		except Exception:
-			return None
-		from app.models import User
-		return User.query.get(data.get("user_id"))
+    email_verified = db.Column(db.Boolean, default=False, nullable=False)
+    email_verified_at = db.Column(db.DateTime, nullable=True)
 
-	def __init__(self, name, email, password, role, image):
-		self.name = name
-		self.email = email
-		self.password = password
-		self.role = role
-		self.image = image
+    created_at = db.Column(db.DateTime(timezone=True), server_default=func.now())
+    updated_at = db.Column(db.DateTime(timezone=True), onupdate=func.now())
+
+    # Relationships
+    author_tickets = db.relationship(
+        'Ticket',
+        foreign_keys='Ticket.author_id',
+        backref='author',
+        cascade='all, delete-orphan',
+        lazy=True
+    )
+
+    owner_tickets = db.relationship(
+        'Ticket',
+        foreign_keys='Ticket.owner_id',
+        backref='owner',
+        passive_deletes=True,
+        lazy=True
+    )
+
+    comments = db.relationship(
+        'Comment',
+        backref='user',
+        cascade='all, delete-orphan',
+        lazy=True
+    )
+
+    receivers = db.relationship(
+        'Notification',
+        foreign_keys='Notification.receiver_id',
+        backref='receiver',
+        cascade='all, delete-orphan',
+        lazy=True
+    )
+
+    senders = db.relationship(
+        'Notification',
+        foreign_keys='Notification.sender_id',
+        backref='sender',
+        cascade='all, delete-orphan',
+        lazy=True
+    )
+    
+    email_preference = db.relationship(
+        "EmailPreference",
+        backref="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+        passive_deletes=True
+    )
+
+    def get_reset_token(self, expires_sec=1800):
+        from flask import current_app
+        s = URLSafeTimedSerializer(current_app.config["SECRET_KEY"])
+        return s.dumps({"user_id": self.id})
+
+    @staticmethod
+    def verify_reset_token(
+        token,
+        expires_sec=1800
+    ):
+        serializer = URLSafeTimedSerializer(
+            current_app.config["SECRET_KEY"]
+        )
+
+        try:
+            data = serializer.loads(
+                token,
+                max_age=expires_sec
+            )
+
+            user_id = data.get("user_id")
+
+            if not user_id:
+                return None
+
+            return db.session.get(
+                User,
+                int(user_id)
+            )
+
+        except Exception:
+            return None
+
+    def __init__(
+        self,
+        name,
+        email,
+        password,
+        role,
+        image="default-profile.png",
+        email_verified=False,
+        email_verified_at=None
+    ):
+        self.name = (
+            name or ""
+        ).strip()
+
+        self.email = (
+            email or ""
+        ).strip().lower()
+
+        self.password = password
+        self.role = role
+        self.image = image
+
+        self.email_verified = (
+            email_verified
+        )
+
+        self.email_verified_at = (
+            email_verified_at
+        )
+
 
 @event.listens_for(User.__table__, 'after_create')
 def create_users(*args, **kwargs):
-	profile = 'default-profile.png'
-	db.session.add(User(name='Ryan Reynolds', email='admin@chatbot.com', password=generate_password_hash('admindemo'), role='Administrator', image=profile))
-	db.session.add(User(name='Robert Downey', email='agent@chatbot.com', password=generate_password_hash('agentdemo'), role='Agent', image=profile))
-	db.session.add(User(name='Jeremy Renner', email='customer@chatbot.com', password=generate_password_hash('customerdemo'), role='Customer', image=profile))
-	db.session.commit()
+    profile = 'default-profile.png'
+    db.session.add(User(
+        name='Ryan Reynolds',
+        email='admin@chatbot.com',
+        password=generate_password_hash('admindemo'),
+        role='Administrator',
+        image=profile
+    ))
+    db.session.add(User(
+        name='Robert Downey',
+        email='agent@chatbot.com',
+        password=generate_password_hash('agentdemo'),
+        role='Agent',
+        image=profile
+    ))
+    db.session.add(User(
+        name='Jeremy Renner',
+        email='customer@chatbot.com',
+        password=generate_password_hash('customerdemo'),
+        role='Customer',
+        image=profile
+    ))
+    db.session.commit()
 
 class Ticket(db.Model):
     __tablename__ = 'tickets'
@@ -492,13 +596,140 @@ class FAQ(db.Model):
         lazy=True
     )
 
+class ChatSession(db.Model):
+    __tablename__ = "chat_sessions"
+
+    id = db.Column(
+        db.Integer,
+        primary_key=True
+    )
+
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "users.id",
+            name="fk_chat_sessions_user_id_users",
+            ondelete="CASCADE"
+        ),
+        nullable=False
+    )
+
+    ticket_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "tickets.id",
+            name="fk_chat_sessions_ticket_id_tickets",
+            ondelete="SET NULL"
+        ),
+        nullable=True
+    )
+
+    title = db.Column(
+        db.String(255),
+        default="New IT Support Chat",
+        nullable=False
+    )
+
+    issue_type = db.Column(
+        db.String(100),
+        nullable=True
+    )
+
+    status = db.Column(
+        db.String(50),
+        default="Active",
+        nullable=False
+    )
+
+    current_stage = db.Column(
+        db.String(50),
+        default="triage",
+        nullable=False
+    )
+
+    triage_step = db.Column(
+        db.Integer,
+        default=0,
+        nullable=False
+    )
+
+    triage_data = db.Column(
+        db.Text,
+        default="{}",
+        nullable=False
+    )
+
+    triage_summary = db.Column(
+        db.Text,
+        nullable=True
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        nullable=False
+    )
+
+    updated_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False
+    )
+
+    user = db.relationship(
+        "User",
+        foreign_keys=[user_id],
+        backref="chat_sessions"
+    )
+
+    ticket = db.relationship(
+        "Ticket",
+        foreign_keys=[ticket_id],
+        backref="chat_session",
+        uselist=False
+    )
+
+    __table_args__ = (
+        db.Index(
+            "idx_chat_sessions_user_id",
+            "user_id"
+        ),
+        db.Index(
+            "idx_chat_sessions_ticket_id",
+            "ticket_id"
+        ),
+        db.Index(
+            "idx_chat_sessions_user_stage",
+            "user_id",
+            "current_stage"
+        ),
+        db.Index(
+            "idx_chat_sessions_user_updated",
+            "user_id",
+            "updated_at"
+        ),
+    )
+
 class ChatMessage(db.Model):
     __tablename__ = "chat_messages"
 
     id = db.Column(db.Integer, primary_key=True)
 
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
-    ticket_id = db.Column(db.Integer, db.ForeignKey("tickets.id", ondelete="SET NULL"), nullable=True)
+
+    session_id = db.Column(
+        db.Integer,
+        db.ForeignKey("chat_sessions.id", ondelete="CASCADE"),
+        nullable=True
+    )
+
+    ticket_id = db.Column(
+        db.Integer,
+        db.ForeignKey("tickets.id", ondelete="SET NULL"),
+        nullable=True
+    )
+
     role = db.Column(db.String(20), nullable=False)
     message = db.Column(db.Text, nullable=False)
 
@@ -545,9 +776,15 @@ class ChatMessage(db.Model):
         db.Index("idx_chat_user_visible", "user_id", "customer_visible"),
         db.Index("idx_chat_user_resolution", "user_id", "resolution_status"),
         db.Index("idx_chat_ticket", "ticket_id"),
+        db.Index("idx_chat_session", "session_id"),
     )
 
     user = db.relationship("User", foreign_keys=[user_id], backref="chat_messages")
+    session = db.relationship(
+        "ChatSession",
+        foreign_keys=[session_id],
+        backref="messages"
+    )
 
     ticket = db.relationship(
         "Ticket",
@@ -630,7 +867,10 @@ class KnowledgeArticle(db.Model):
 class AgentSolution(db.Model):
     __tablename__ = "agent_solutions"
 
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(
+        db.Integer,
+        primary_key=True
+    )
 
     title = db.Column(
         db.String(255),
@@ -644,21 +884,32 @@ class AgentSolution(db.Model):
 
     category_id = db.Column(
         db.Integer,
-        db.ForeignKey("categories.id", ondelete="SET NULL"),
+        db.ForeignKey(
+            "categories.id",
+            name="fk_agent_solutions_category_id_categories",
+            ondelete="SET NULL"
+        ),
         nullable=True
     )
 
     submitted_by_id = db.Column(
         db.Integer,
-        db.ForeignKey("users.id"),
+        db.ForeignKey(
+            "users.id",
+            name="fk_agent_solutions_submitted_by_id_users",
+            ondelete="SET NULL"
+        ),
         nullable=True
     )
 
     ticket_id = db.Column(
         db.Integer,
-        db.ForeignKey("tickets.id", ondelete="SET NULL"),
-        nullable=True,
-        unique=True
+        db.ForeignKey(
+            "tickets.id",
+            name="fk_agent_solutions_ticket_id_tickets",
+            ondelete="SET NULL"
+        ),
+        nullable=True
     )
 
     tags = db.Column(
@@ -668,36 +919,70 @@ class AgentSolution(db.Model):
 
     status = db.Column(
         db.String(50),
-        default="Pending"
+        default="Pending",
+        nullable=False
     )
 
     view_count = db.Column(
         db.Integer,
-        default=0
+        default=0,
+        nullable=False
     )
 
     reuse_count = db.Column(
         db.Integer,
-        default=0
+        default=0,
+        nullable=False
     )
 
     created_at = db.Column(
         db.DateTime,
-        default=datetime.utcnow
+        default=datetime.utcnow,
+        nullable=False
+    )
+
+    updated_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False
     )
 
     category = db.relationship(
         "Category",
+        foreign_keys=[category_id],
         backref="agent_solutions"
     )
 
     submitted_by = db.relationship(
         "User",
-        foreign_keys=[submitted_by_id]
+        foreign_keys=[submitted_by_id],
+        backref="submitted_agent_solutions"
     )
 
     ticket = db.relationship(
-        "Ticket"
+        "Ticket",
+        foreign_keys=[ticket_id],
+        backref="agent_solutions"
+    )
+
+    __table_args__ = (
+        db.Index(
+            "idx_agent_solutions_ticket_id",
+            "ticket_id"
+        ),
+        db.Index(
+            "idx_agent_solutions_category_id",
+            "category_id"
+        ),
+        db.Index(
+            "idx_agent_solutions_submitted_by_id",
+            "submitted_by_id"
+        ),
+        db.Index(
+            "idx_agent_solutions_status",
+            "status"
+        ),
     )
     
 class Comment(db.Model):
@@ -729,7 +1014,13 @@ class CustomerSatisfaction(db.Model):
     ticket_id = db.Column(
         db.Integer,
         db.ForeignKey("tickets.id", ondelete="CASCADE"),
-        nullable=False
+        nullable=True
+    )
+
+    session_id = db.Column(
+        db.Integer,
+        db.ForeignKey("chat_sessions.id", ondelete="CASCADE"),
+        nullable=True
     )
 
     customer_id = db.Column(
@@ -738,27 +1029,41 @@ class CustomerSatisfaction(db.Model):
         nullable=False
     )
 
-    rating = db.Column(
-        db.Integer,
-        nullable=False
-    )
+    rating = db.Column(db.Integer, nullable=False)
 
-    feedback = db.Column(
-        db.Text,
-        nullable=True
-    )
+    feedback = db.Column(db.Text, nullable=True)
 
     created_at = db.Column(
         db.DateTime,
         default=datetime.utcnow
     )
     
+    updated_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
+
     __table_args__ = (
-        db.UniqueConstraint("ticket_id", "customer_id", name="uq_ticket_customer_rating"),
+        db.UniqueConstraint(
+            "ticket_id",
+            "customer_id",
+            name="uq_ticket_customer_rating"
+        ),
+        db.UniqueConstraint(
+            "session_id",
+            "customer_id",
+            name="uq_session_customer_rating"
+        ),
     )
 
     ticket = db.relationship(
         "Ticket",
+        backref="satisfaction_rating"
+    )
+
+    session = db.relationship(
+        "ChatSession",
         backref="satisfaction_rating"
     )
 
@@ -871,4 +1176,231 @@ class MaintenanceSetting(db.Model):
     updated_by = db.relationship(
         "User",
         foreign_keys=[updated_by_id]
+    )
+    
+
+class EmailVerificationCode(db.Model):
+    __tablename__ = "email_verification_codes"
+
+    id = db.Column(
+        db.Integer,
+        primary_key=True
+    )
+
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "users.id",
+            ondelete="CASCADE"
+        ),
+        nullable=False
+    )
+
+    code_hash = db.Column(
+        db.String(255),
+        nullable=False
+    )
+
+    purpose = db.Column(
+        db.String(50),
+        nullable=False
+    )
+    # register, login, password_reset
+
+    expires_at = db.Column(
+        db.DateTime,
+        nullable=False
+    )
+
+    used = db.Column(
+        db.Boolean,
+        default=False,
+        nullable=False
+    )
+
+    attempts = db.Column(
+        db.Integer,
+        default=0,
+        nullable=False
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        nullable=False
+    )
+
+    used_at = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+    user = db.relationship(
+        "User",
+        foreign_keys=[user_id],
+        backref=db.backref(
+            "email_verification_codes",
+            cascade="all, delete-orphan",
+            lazy=True
+        )
+    )
+
+    __table_args__ = (
+        db.Index(
+            "idx_email_code_user_purpose",
+            "user_id",
+            "purpose"
+        ),
+    )
+    
+
+class EmailLog(db.Model):
+    __tablename__ = "email_logs"
+
+    id = db.Column(
+        db.Integer,
+        primary_key=True
+    )
+
+    recipient = db.Column(
+        db.String(255),
+        nullable=False
+    )
+
+    subject = db.Column(
+        db.String(255),
+        nullable=False
+    )
+
+    email_type = db.Column(
+        db.String(80),
+        nullable=False
+    )
+
+    status = db.Column(
+        db.String(30),
+        default="Pending",
+        nullable=False
+    )
+    # Pending, Sent, Failed
+
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "users.id",
+            ondelete="SET NULL"
+        ),
+        nullable=True
+    )
+
+    ticket_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "tickets.id",
+            ondelete="SET NULL"
+        ),
+        nullable=True
+    )
+
+    error_message = db.Column(
+        db.Text,
+        nullable=True
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        nullable=False
+    )
+
+    sent_at = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+    user = db.relationship(
+        "User",
+        foreign_keys=[user_id]
+    )
+
+    ticket = db.relationship(
+        "Ticket",
+        foreign_keys=[ticket_id]
+    )
+
+    __table_args__ = (
+        db.Index(
+            "idx_email_log_status",
+            "status"
+        ),
+        db.Index(
+            "idx_email_log_created",
+            "created_at"
+        ),
+        db.Index(
+            "idx_email_log_ticket",
+            "ticket_id"
+        ),
+    )
+    
+class EmailPreference(db.Model):
+    __tablename__ = "email_preferences"
+
+    id = db.Column(
+        db.Integer,
+        primary_key=True
+    )
+
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "users.id",
+            name="fk_email_preferences_user_id_users",
+            ondelete="CASCADE"
+        ),
+        nullable=False
+    )
+
+    ticket_updates = db.Column(
+        db.Boolean,
+        default=True,
+        nullable=False
+    )
+
+    security_emails = db.Column(
+        db.Boolean,
+        default=True,
+        nullable=False
+    )
+
+    marketing_emails = db.Column(
+        db.Boolean,
+        default=False,
+        nullable=False
+    )
+
+    satisfaction_emails = db.Column(
+        db.Boolean,
+        default=True,
+        nullable=False
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        nullable=False
+    )
+
+    updated_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "user_id",
+            name="uq_email_preferences_user_id"
+        ),
     )

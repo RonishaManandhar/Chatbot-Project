@@ -185,15 +185,30 @@
                 <tr>
                     <td>Assignee</td>
                     <td>
-                        <div class="form-group row">
+                        {% if is_closed %}
+
+                        {% if ticket.owner %}
+                        {{ ticket.owner.name }}
+                        {% else %}
+                        <span class="text-muted">
+                            Unassigned
+                        </span>
+                        {% endif %}
+
+                        {% else %}
+
+                        <div class="form-group row mb-0">
                             <div class="col-md-5">
-                                {% if ticket.status_id == 4 %}
-                                {{ form.owner(class="form-control", disabled=True) }}
-                                {% else %}
-                                {{ render_select(form.owner, "Assignee is required") }}
-                                {% endif %}
+                                {{
+ render_select(
+                        form.owner,
+                        "Assignee is required"
+                    )
+                                }}
                             </div>
                         </div>
+
+                        {% endif %}
                     </td>
                 </tr>
 
@@ -211,33 +226,60 @@
                 <tr>
                     <td>Priority</td>
                     <td>
-                        <div class="form-group row">
+                        {% if is_closed %}
+
+                        {% if ticket.priority %}
+                        {{ ticket.priority.priority }}
+                        {% else %}
+                        <span class="text-muted">
+                            No priority assigned
+                        </span>
+                        {% endif %}
+
+                        {% else %}
+
+                        <div class="form-group row mb-0">
                             <div class="col-md-5">
-                                {% if ticket.status_id == 4 %}
-                                {{ form.priority(class="form-control", disabled=True) }}
-                                {% else %}
-                                {{ render_select(form.priority, "Priority is required") }}
-                                {% endif %}
+                                {{
+ render_select(
+                        form.priority,
+                        "Priority is required"
+                    )
+                                }}
                             </div>
                         </div>
+
+                        {% endif %}
                     </td>
                 </tr>
 
                 <tr>
                     <td>Status</td>
                     <td>
-                        <div class="form-group row">
+                        {% if is_closed %}
+
+                        <strong>
+                            {{ ticket.status.status }}
+                        </strong>
+
+                        <small class="text-muted d-block">
+                            Reopen this ticket before making changes.
+                        </small>
+
+                        {% else %}
+
+                        <div class="form-group row mb-0">
                             <div class="col-md-5">
-                                {% if ticket.status_id == 4 %}
-                                {{ form.status(class="form-control", disabled=True) }}
-                                <small class="text-muted">
-                                    Closed tickets cannot be edited. Reopen the ticket first.
-                                </small>
-                                {% else %}
-                                {{ render_select(form.status, "Status is required") }}
-                                {% endif %}
+                                {{
+ render_select(
+                        form.status,
+                        "Status is required"
+                    )
+                                }}
                             </div>
                         </div>
+
+                        {% endif %}
                     </td>
                 </tr>
 
@@ -289,20 +331,12 @@
                 <tr>
                     <td></td>
                     <td>
-                        {% if ticket.status_id != 4 %}
-                        <button type="submit" class="btn btn-primary btn-sm">
+                        {% if not is_closed %}
+
+                        <button type="submit"
+                                class="btn btn-primary btn-sm">
                             Update
                         </button>
-                        {% else %}
-                        <span class="text-muted mr-2">
-                            This ticket is closed.
-                        </span>
-                        {% endif %}
-
-                        <a href="{{ url_for('admin.all_tickets') }}"
-                           class="btn btn-secondary btn-sm">
-                            Back
-                        </a>
 
                         <button type="button"
                                 id="enterChatBtn"
@@ -313,6 +347,19 @@
                         <span class="enter-chat-note">
                             Open live conversation with customer
                         </span>
+
+                        {% else %}
+
+                        <span class="badge badge-secondary mr-2">
+                            Closed
+                        </span>
+
+                        {% endif %}
+
+                        <a href="{{ url_for('admin.all_tickets') }}"
+                           class="btn btn-secondary btn-sm">
+                            Back
+                        </a>
                     </td>
                 </tr>
 
@@ -323,18 +370,31 @@
 
 </div>
 
-{% if ticket.status_id == 4 %}
+{% if is_closed %}
 <div class="content-box mb-3 content-lighten max-w-1000 text-center">
 
     <p class="mb-2">
-        This ticket is currently closed.
-        Reopen it before making changes or continuing the chat.
+        This ticket is closed.
+        It cannot be edited or continued until it is reopened.
     </p>
 
-    <a href="{{ url_for('admin.reopen_ticket', id=ticket.id) }}"
-       class="btn btn-warning btn-sm">
-        Reopen Ticket
-    </a>
+    <form method="POST"
+          action="{{ url_for(
+              'admin.reopen_ticket',
+              id=ticket.id
+          ) }}"
+          class="d-inline">
+
+        <input type="hidden"
+               name="csrf_token"
+               value="{{ csrf_token() }}">
+
+        <button type="submit"
+                class="btn btn-warning btn-sm">
+            Reopen Ticket
+        </button>
+
+    </form>
 
 </div>
 {% endif %}
@@ -525,6 +585,16 @@ const liveComments = document.getElementById("live-comments");
 const chatForm = document.getElementById("chatForm");
 const commentInput = document.getElementById("comment");
 const sendChatBtn = document.getElementById("sendChatBtn");
+const attachmentContainer = document.getElementById("ticketAttachmentList");
+
+// Declare ticketId before using it in chatStorageKey.
+const ticketId = "{{ ticket.id }}";
+const currentUserRole = "{{ current_user.role }}";
+const currentUserName = "{{ current_user.name }}";
+const chatStorageKey = `ticket-chat-open-${ticketId}`;
+
+// LiveChatCore returns the same Socket.IO connection for this page.
+const socket = LiveChatCore.initSocket();
 
 function openChatBox() {
     if (supportChatBox) {
@@ -535,8 +605,12 @@ function openChatBox() {
         enterChatBtn.style.display = "none";
     }
 
+    sessionStorage.setItem(chatStorageKey, "true");
+
     setTimeout(function () {
-        LiveChatCore.scrollBottom(liveComments);
+        if (liveComments) {
+            LiveChatCore.scrollBottom(liveComments);
+        }
     }, 100);
 }
 
@@ -551,200 +625,163 @@ function addChatBubble(message, side, name, type) {
     });
 }
 
-function appendAttachmentToSection(message, senderName) {
-    const box = document.getElementById("ticketAttachmentList");
-    if (!box) return;
-
-    const emptyText = box.querySelector(".text-muted");
-
-    if (emptyText && emptyText.innerText.includes("No attachment")) {
-        emptyText.remove();
+function isSameTicketEvent(data) {
+    if (!data || !data.ticket_id) {
+        return true;
     }
 
-    const existingLinks = box.querySelectorAll("a");
+    return Number(data.ticket_id) === Number(ticketId);
+}
 
-    for (const link of existingLinks) {
-        if (message.includes(link.getAttribute("href"))) {
-            return;
-        }
+function isSystemMessage(message) {
+    message = String(message || "");
+
+    return (
+        message.startsWith("✅") ||
+        message.startsWith("🚨") ||
+        message.startsWith("Ticket reopened") ||
+        message.startsWith("Ticket closed") ||
+        message.startsWith("Ticket escalated") ||
+        message.startsWith("<strong>Current AI / FAQ Conversation") ||
+        message.startsWith("<strong>Previous AI / FAQ Conversation")
+    );
+}
+
+function addAttachmentToTicketDetails(data) {
+    if (!attachmentContainer) return;
+
+    const message = String(data.message || "");
+    const isAttachment =
+        data.is_attachment === true ||
+        message.includes("Attachment uploaded:");
+
+    if (!isAttachment) return;
+    if (attachmentContainer.innerHTML.includes(message)) return;
+
+    const noAttachmentText = document.getElementById("noAttachmentText");
+    if (noAttachmentText) {
+        noAttachmentText.remove();
     }
 
-    const div = document.createElement("div");
-    div.className = "mb-2";
-
-    div.innerHTML = `
+    const wrapper = document.createElement("div");
+    wrapper.className = "mb-2 attachment-item";
+    wrapper.innerHTML = `
         ${message}
         <small class="text-muted d-block">
-            Uploaded by ${senderName || "User"}
+            Uploaded by ${data.sender_name || "User"}
         </small>
     `;
 
-    box.appendChild(div);
+    attachmentContainer.appendChild(wrapper);
+}
+
+function reloadTicketSoon() {
+    // Status changes require refreshed form fields. The open state is retained.
+    setTimeout(function () {
+        window.location.reload();
+    }, 800);
 }
 
 if (enterChatBtn) {
     enterChatBtn.addEventListener("click", openChatBox);
 }
 
-const socket = LiveChatCore.initSocket();
+if (sessionStorage.getItem(chatStorageKey) === "true") {
+    openChatBox();
+}
 
-const ticketId = "{{ ticket.id }}";
-const currentUserRole = "{{ current_user.role }}";
-const currentUserName = "{{ current_user.name }}";
+try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("chat") === "1") {
+        openChatBox();
+    }
+} catch (error) {
+    console.error("Unable to read chat URL parameters:", error);
+}
 
 socket.on("connect", function () {
-    console.log("✅ Admin ticket socket connected");
-    LiveChatCore.joinTicketRoom(ticketId);
+    console.log("SOCKET CONNECTED (ADMIN):", socket.id);
+
+    socket.emit("join_ticket_room", {
+        ticket_id: Number(ticketId)
+    });
 });
 
-    socket.on("new_comment", function (data) {
-        if (!data || !data.message) return;
+socket.on("ticket_room_joined", function (data) {
+    console.log("TICKET ROOM RESULT (ADMIN):", data);
+});
 
-        if (
-            data.ticket_id &&
-            Number(data.ticket_id) !== Number(ticketId)
-        ) {
-            return;
-        }
+socket.on("connect_error", function (error) {
+    console.error("SOCKET CONNECTION ERROR (ADMIN):", error);
+});
 
-        const senderRole = String(data.sender_role || "");
-        const senderName = String(data.sender_name || "");
-        const message = String(data.message || "");
+socket.on("new_comment", function (data) {
+    console.log("NEW COMMENT RECEIVED (ADMIN):", data);
 
-        if (
-            data.is_attachment === true ||
-            message.includes("Attachment uploaded:")
-        ) {
-            const box = document.getElementById("ticketAttachmentList");
+    if (!data || !data.message || !isSameTicketEvent(data)) {
+        return;
+    }
 
-            if (box) {
-                box.innerHTML = box.innerHTML.replace(
-                    /<span class="text-muted">\s*No attachment\s*<\/span>/,
-                    ""
-                );
+    const senderRole = String(data.sender_role || "").trim();
+    const senderName = String(data.sender_name || "").trim();
+    const message = String(data.message || "");
 
-                const div = document.createElement("div");
-                div.className = "mb-2";
+    addAttachmentToTicketDetails(data);
 
-                div.innerHTML = `
-                ${message}
-                <small class="text-muted d-block">
-                    Uploaded by ${senderName || "User"}
-                </small>
-            `;
+    // The sender already inserts their own message after fetch succeeds.
+    const isOwnMessage =
+        senderRole.toLowerCase() === currentUserRole.toLowerCase() &&
+        senderName.toLowerCase() === currentUserName.toLowerCase();
 
-                box.appendChild(div);
-            }
-        }
-
-        if (
-            senderRole === currentUserRole &&
-            senderName === currentUserName
-        ) {
-            return;
-        }
-
-        const isCustomer = senderRole.toLowerCase() === "customer";
-
-        const isSystem =
-            message.startsWith("✅") ||
-            message.startsWith("🚨") ||
-            message.startsWith("Ticket reopened") ||
-            message.startsWith("Ticket closed") ||
-            message.startsWith("Ticket escalated") ||
-            (message.startsWith("<strong>Current AI / FAQ Conversation") || message.startsWith("<strong>Previous AI / FAQ Conversation"));
-
-        openChatBox();
-
-        if (isSystem) {
-            addChatBubble(message, "left", "System", "system");
-        }
-        else if (isCustomer) {
-            addChatBubble(message, "left", senderName || "Customer", "normal");
-        }
-        else {
-            addChatBubble(message, "right", senderName || "Support", "normal");
-        }
-    });
-
-socket.on("ticket_closed", function (data) {
-    if (!data || !data.message) return;
-
-    if (
-        data.ticket_id &&
-        Number(data.ticket_id) !== Number(ticketId)
-    ) {
+    if (isOwnMessage) {
         return;
     }
 
     openChatBox();
 
-    addChatBubble(
-        data.message,
-        "left",
-        "System",
-        "system"
-    );
+    if (isSystemMessage(message)) {
+        addChatBubble(message, "left", "System", "system");
+    } else if (senderRole.toLowerCase() === "customer") {
+        addChatBubble(message, "left", senderName || "Customer", "normal");
+    } else {
+        addChatBubble(message, "right", senderName || "Support", "normal");
+    }
 
-    setTimeout(function () {
-        window.location.reload();
-    }, 800);
+    LiveChatCore.scrollBottom(liveComments);
+});
+
+socket.on("agent_joined", function (data) {
+    if (!data || !data.message || !isSameTicketEvent(data)) return;
+    openChatBox();
+    addChatBubble(data.message, "left", "System", "system");
+});
+
+socket.on("ticket_closed", function (data) {
+    if (!data || !data.message || !isSameTicketEvent(data)) return;
+    openChatBox();
+    addChatBubble(data.message, "left", "System", "system");
+    reloadTicketSoon();
 });
 
 socket.on("ticket_reopened", function (data) {
-    if (!data || !data.message) return;
-
-    if (
-        data.ticket_id &&
-        Number(data.ticket_id) !== Number(ticketId)
-    ) {
-        return;
-    }
-
+    if (!data || !data.message || !isSameTicketEvent(data)) return;
     openChatBox();
-
-    addChatBubble(
-        data.message,
-        "left",
-        "System",
-        "system"
-    );
-
-    setTimeout(function () {
-        window.location.reload();
-    }, 800);
+    addChatBubble(data.message, "left", "System", "system");
+    reloadTicketSoon();
 });
 
 socket.on("ticket_escalated", function (data) {
-    if (!data || !data.message) return;
-
-    if (
-        data.ticket_id &&
-        Number(data.ticket_id) !== Number(ticketId)
-    ) {
-        return;
-    }
-
+    if (!data || !data.message || !isSameTicketEvent(data)) return;
     openChatBox();
-
-    addChatBubble(
-        data.message,
-        "left",
-        "System",
-        "system"
-    );
-
-    setTimeout(function () {
-        window.location.reload();
-    }, 800);
+    addChatBubble(data.message, "left", "System", "system");
+    reloadTicketSoon();
 });
 
 if (chatForm) {
-    chatForm.addEventListener("submit", async function (e) {
-        e.preventDefault();
+    chatForm.addEventListener("submit", async function (event) {
+        event.preventDefault();
 
         const message = (commentInput.value || "").trim();
-
         if (!message) return;
 
         if (sendChatBtn) {
@@ -753,34 +790,24 @@ if (chatForm) {
         }
 
         try {
-            const formData = new FormData(chatForm);
-
             const response = await fetch(chatForm.action, {
                 method: "POST",
-                body: formData
+                body: new FormData(chatForm)
             });
 
             const result = await response.json();
 
-            if (result.success === true) {
-                addChatBubble(
-                    message,
-                    "right",
-                    "You",
-                    "normal"
-                );
+            if (!response.ok || result.success !== true) {
+                throw new Error(result.message || "Message could not be sent.");
+            }
 
-                commentInput.value = "";
-            }
-            else {
-                alert("Message could not be sent.");
-            }
-        }
-        catch (err) {
-            console.error("Chat send error:", err);
-            alert("Message could not be sent.");
-        }
-        finally {
+            addChatBubble(message, "right", "You", "normal");
+            commentInput.value = "";
+            LiveChatCore.scrollBottom(liveComments);
+        } catch (error) {
+            console.error("Chat send error:", error);
+            alert(error.message || "Message could not be sent.");
+        } finally {
             if (sendChatBtn) {
                 sendChatBtn.disabled = false;
                 sendChatBtn.innerText = "Send";
@@ -790,9 +817,9 @@ if (chatForm) {
 }
 
 if (commentInput && chatForm) {
-    commentInput.addEventListener("keydown", function (e) {
-        if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
+    commentInput.addEventListener("keydown", function (event) {
+        if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
             chatForm.requestSubmit();
         }
     });

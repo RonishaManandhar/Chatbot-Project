@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<body>
+
+    <h2>New Reply On Your Ticket</h2>
+
+    <p>Hello {{ user.name }},</p>
+
+    <p>
+        A new reply has been added to your support ticket.
+    </p>
+
+    <p>
+
+        Ticket:
+        {{ ticket.number }}
+
+        <br>
+
+        Subject:
+        {{ ticket.subject }}
+
+    </p>
+
+    <p>
+
+        Latest Message:
+
+    </p>
+
+    <div>
+
+        {{ message }}
+
+    </div>
+
+    <br>
+
+    <a href="{{ url_for(
+'customer.view_ticket',
+id=ticket.id,
+_external=True
+) }}">
+        Open Ticket
+    </a>
+
+</body>
+</html>

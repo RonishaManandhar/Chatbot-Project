@@ -1,20 +1,52 @@
-﻿from flask import Blueprint, current_app, render_template as _render, send_file, redirect, request, url_for, flash, jsonify, Response
+﻿from flask import (
+    Blueprint,
+    current_app,
+    render_template as _render,
+    send_file,
+    send_from_directory,
+    redirect,
+    request,
+    url_for,
+    flash,
+    jsonify,
+    Response,
+    abort
+)
+from app.utils.system_events import (
+    log_system_event
+)
 from flask_login import current_user
 from datetime import datetime
 from flask_socketio import join_room
-from sqlalchemy import or_, desc, text
+from sqlalchemy import or_, desc, text, func
 from app.admin.forms import (
-    TicketForm, UpdateTicketForm, CommentForm, CategoryForm, PriorityForm,
+    ChangeEmailForm, TicketForm, UpdateTicketForm, CommentForm, CategoryForm, PriorityForm,
     UserForm, UpdateRoleForm, ChangeProfileForm, ChangePasswordForm, FAQForm, KnowledgeArticleForm
 )
+
 from app.models import User, Ticket, Category, Priority, Status, Comment, Notification, FAQ, ChatMessage, AgentReport, ChatbotSetting, KnowledgeArticle, AgentSolution, CustomerSatisfaction, SystemEvent, MaintenanceSetting
 from app.utils.generate_digits import random_numbers
 from app.utils.authorized_role import login_required
 from app.exts import db, csrf
 from app.socketio_ext import socketio
+from app.models import EmailLog
 
 from werkzeug.utils import secure_filename
-from werkzeug.security import generate_password_hash
+from werkzeug.security import (
+    generate_password_hash,
+    check_password_hash
+)
+from app.services.email_service import (
+    send_ticket_reply_email,
+    send_ticket_created_email,
+    send_ticket_closed_email,
+    send_satisfaction_email,
+    send_ticket_assigned_email,
+    send_ticket_reassigned_email,
+    send_ticket_escalated_email,
+    send_ticket_reopened_email,
+    send_ticket_deleted_email
+)
 
 from sqlalchemy import desc, or_, func
 
@@ -23,7 +55,9 @@ import shutil
 import uuid
 import os
 import csv
+import html
 import io
+
 
 
 admin_blueprint = Blueprint("admin", __name__)
@@ -55,11 +89,25 @@ def render_template(*args, **kwargs):
             .count()
         )
 
-    active_chat_count = (
-        Ticket.query
-        .filter(Ticket.status_id != get_closed_status_id())
-        .count()
-    )
+    excluded_status_ids = [
+        status_id
+        for status_id in [
+            get_closed_status_id(),
+            get_solved_status_id()
+        ]
+        if status_id is not None
+    ]
+
+    active_chat_query = Ticket.query
+
+    if excluded_status_ids:
+        active_chat_query = active_chat_query.filter(
+            ~Ticket.status_id.in_(
+                excluded_status_ids
+            )
+        )
+
+    active_chat_count = active_chat_query.count()
 
     agent_report_count = (
         AgentReport.query
@@ -193,8 +241,20 @@ def get_pending_status_id():
 def get_closed_status_id():
     return get_status_id("Closed", 4)
 
+def get_solved_status_id():
+    return get_status_id("Solved", 2)
+
 def get_waiting_customer_status_id():
-    return get_status_id("Waiting For Customer", None)
+    status = (
+        Status.query
+        .filter(
+            func.lower(Status.status)
+            == "waiting for customer"
+        )
+        .first()
+    )
+
+    return status.id if status else None
 
 
 def auto_close_waiting_customer_tickets():
@@ -242,6 +302,9 @@ def auto_close_waiting_customer_tickets():
 
         if waiting_hours >= 48:
             ticket.status_id = closed_id
+            ticket.updated_at = datetime.datetime.utcnow()
+            
+
 
             close_comment = Comment(
                 comment="Ticket automatically closed because the customer did not respond within 48 hours.",
@@ -250,12 +313,6 @@ def auto_close_waiting_customer_tickets():
             )
 
             db.session.add(close_comment)
-
-            ChatMessage.query.filter(
-                ChatMessage.user_id == ticket.author_id
-            ).update({
-                "customer_visible": False
-            })
 
             db.session.flush()
 
@@ -266,28 +323,16 @@ def auto_close_waiting_customer_tickets():
                 "Ticket automatically closed due to customer inactivity."
             )
 
+            socketio.emit(
+                "customer_ticket_closed",
+                {
+                    "ticket_id": ticket.id
+                },
+                room=f"user_{ticket.author_id}"
+            )
+
     db.session.commit()
     
-def log_system_event(event_type, message, severity="Info", user_id=None, ticket_id=None):
-    try:
-        event = SystemEvent(
-            event_type=event_type,
-            severity=severity,
-            message=message,
-            user_id=user_id or (current_user.id if current_user.is_authenticated else None),
-            related_ticket_id=ticket_id
-        )
-
-        db.session.add(event)
-        db.session.commit()
-
-        return event
-
-    except Exception as e:
-        db.session.rollback()
-        print("SYSTEM EVENT LOG ERROR:", e)
-        return None
-
 
 def get_maintenance_setting():
     setting = MaintenanceSetting.query.first()
@@ -319,32 +364,65 @@ def is_maintenance_active():
 def notify_unassigned_tickets():
     now = datetime.datetime.utcnow()
 
-    closed_id = get_closed_status_id()
+    inactive_status_ids = [
+        status_id
+        for status_id in [
+            get_closed_status_id(),
+            get_solved_status_id()
+        ]
+        if status_id is not None
+    ]
 
-    unassigned_tickets = (
-        Ticket.query
-        .filter(Ticket.owner_id == None)
-        .filter(Ticket.status_id != closed_id)
-        .all()
+    query = Ticket.query.filter(
+        Ticket.owner_id.is_(None)
     )
+
+    if inactive_status_ids:
+        query = query.filter(
+            ~Ticket.status_id.in_(
+                inactive_status_ids
+            )
+        )
+
+    unassigned_tickets = query.all()
+
+    changed = False
 
     for ticket in unassigned_tickets:
 
-        if not ticket.created_at:
+        # Use updated_at as the start of the current
+        # unassigned period.
+        unassigned_since = (
+            ticket.updated_at
+            or ticket.created_at
+        )
+
+        if not unassigned_since:
             continue
 
-        created_at = ticket.created_at.replace(tzinfo=None)
+        unassigned_since = (
+            unassigned_since.replace(
+                tzinfo=None
+            )
+        )
 
         waiting_minutes = (
-            now - created_at
+            now - unassigned_since
         ).total_seconds() / 60
 
-        if waiting_minutes >= 15 and not ticket.unassigned_15min_sent:
+        # =====================================================
+        # 15-MINUTE CUSTOMER REMINDER
+        # =====================================================
 
+        if (
+            waiting_minutes >= 15
+            and not ticket.unassigned_15min_sent
+        ):
             notify_user(
                 message=(
-                    "Your ticket is still waiting for an available support agent. "
-                    "Thank you for your patience."
+                    "Your ticket is still waiting for an "
+                    "available support agent. Thank you for "
+                    "your patience."
                 ),
                 receiver_id=ticket.author_id,
                 sender_id=ticket.author_id,
@@ -353,31 +431,48 @@ def notify_unassigned_tickets():
 
             reminder_comment = Comment(
                 comment=(
-                    "Customer wait-time reminder sent: ticket is still waiting "
-                    "for an available support agent."
+                    "Customer wait-time reminder sent: ticket "
+                    "is still waiting for an available support "
+                    "agent."
                 ),
                 author_id=ticket.author_id,
                 ticket_id=ticket.id
             )
 
-            db.session.add(reminder_comment)
+            db.session.add(
+                reminder_comment
+            )
 
             ticket.unassigned_15min_sent = True
+            changed = True
 
-        if waiting_minutes >= 30 and not ticket.unassigned_30min_sent:
+        # =====================================================
+        # 30-MINUTE STAFF ALERT
+        # =====================================================
 
+        if (
+            waiting_minutes >= 30
+            and not ticket.unassigned_30min_sent
+        ):
             staff_users = (
                 User.query
-                .filter(User.role.in_(["Agent", "Administrator"]))
+                .filter(
+                    User.role.in_(
+                        [
+                            "Agent",
+                            "Administrator"
+                        ]
+                    )
+                )
                 .all()
             )
 
             for staff in staff_users:
-
                 notify_user(
                     message=(
-                        f"Unassigned ticket #{ticket.number} has been waiting "
-                        "over 30 minutes."
+                        f"Unassigned ticket "
+                        f"#{ticket.number} has been "
+                        f"waiting over 30 minutes."
                     ),
                     receiver_id=staff.id,
                     sender_id=ticket.author_id,
@@ -386,18 +481,31 @@ def notify_unassigned_tickets():
 
             staff_comment = Comment(
                 comment=(
-                    "Staff alert sent: ticket has been unassigned for more "
-                    "than 30 minutes."
+                    "Staff alert sent: ticket has been "
+                    "unassigned for more than 30 minutes."
                 ),
                 author_id=ticket.author_id,
                 ticket_id=ticket.id
             )
 
-            db.session.add(staff_comment)
+            db.session.add(
+                staff_comment
+            )
 
             ticket.unassigned_30min_sent = True
+            changed = True
 
-    db.session.commit()
+    if changed:
+        try:
+            db.session.commit()
+
+        except Exception:
+            db.session.rollback()
+
+            current_app.logger.exception(
+                "Admin unassigned-ticket notification "
+                "update failed."
+            )
 
 def serialize_ticket(ticket):
     return {
@@ -416,19 +524,35 @@ def serialize_ticket(ticket):
 
 
 def serialize_comment(comment):
+    user = comment.user
+
     return {
         "id": comment.id,
-        "message": comment.comment,
-        "author": comment.user.name,
+        "message": comment.comment or "",
+        "author": (
+            user.name
+            if user
+            else "Deleted user"
+        ),
         "author_id": comment.author_id,
-        "role": comment.user.role,
-        "created_at": comment.created_at.strftime("%d %b %Y, %H:%M") if comment.created_at else ""
+        "role": (
+            user.role
+            if user
+            else "System"
+        ),
+        "created_at": (
+            comment.created_at.strftime(
+                "%d %b %Y, %H:%M"
+            )
+            if comment.created_at
+            else ""
+        )
     }
 
 def get_feature_url(event_name, role="Administrator"):
     admin_urls = {
         "knowledge_updated": url_for("admin.knowledge_base"),
-        "ai_training_updated": url_for("admin.review_queue"),
+        "ai_training_updated": url_for( "admin.ai_review_center", tab="pending"),
         "ai_settings_updated": url_for("admin.chatbot_settings"),
         "agent_knowledge_updated": url_for("admin.agent_solution_library"),
         "users_staff_updated": url_for("admin.create_account"),
@@ -686,12 +810,23 @@ def emit_global_event(event_name, ticket=None, message=None):
 
 def emit_ticket_event(ticket, event_name, message):
     payload = {
-        **serialize_ticket(ticket),
-        "message": message
+        "ticket_id": ticket.id,
+        "ticket_number": ticket.number,
+        "message": message,
+        "status": ticket.status.status if ticket.status else "",
+        "status_id": ticket.status_id,
+        "owner_id": ticket.owner_id,
+        "author_id": ticket.author_id
     }
 
-    socketio.emit(event_name, payload, room=f"ticket_{ticket.id}")
-    socketio.emit(event_name, payload)
+    # Send the actual ticket event only once to users viewing this ticket.
+    socketio.emit(
+        event_name,
+        payload,
+        room=f"ticket_{ticket.id}"
+    )
+
+    # These update other pages, badges, and analytics silently.
     socketio.emit("global_ticket_updated", payload)
     socketio.emit("sidebar_counts_updated", payload)
     socketio.emit("notification_updated", payload)
@@ -834,29 +969,80 @@ def my_tickets():
     return render_template("admin/my_tickets.html", form=form, tickets=tickets)
 
 
-@admin_blueprint.route("/new-tickets", methods=["GET"])
+@admin_blueprint.route(
+    "/new-tickets",
+    methods=["GET"]
+)
 @login_required(role="Administrator")
 def new_tickets():
+    auto_close_waiting_customer_tickets()
+    notify_unassigned_tickets()
+
+    closed_status_id = get_closed_status_id()
+
+    solved_status_id = get_status_id(
+        "Solved",
+        fallback=None
+    )
+
+    excluded_status_ids = [
+        status_id
+        for status_id in [
+            closed_status_id,
+            solved_status_id
+        ]
+        if status_id is not None
+    ]
+
+    query = Ticket.query.filter(
+        Ticket.owner_id.is_(None)
+    )
+
+    if excluded_status_ids:
+        query = query.filter(
+            ~Ticket.status_id.in_(
+                excluded_status_ids
+            )
+        )
+
     tickets = (
-        Ticket.query
-        .filter(Ticket.owner_id == None)
-        .filter(Ticket.status_id != 4)
-        .order_by(desc(Ticket.created_at))
+        query
+        .order_by(
+            desc(Ticket.created_at)
+        )
         .all()
     )
 
     form = TicketForm()
-    return render_template("admin/new_tickets.html", form=form, tickets=tickets)
 
+    return render_template(
+        "admin/new_tickets.html",
+        form=form,
+        tickets=tickets
+    )
 
-@admin_blueprint.route("/all-tickets", methods=["GET"])
+@admin_blueprint.route(
+    "/all-tickets",
+    methods=["GET"]
+)
 @login_required(role="Administrator")
 def all_tickets():
     auto_close_waiting_customer_tickets()
     notify_unassigned_tickets()
 
-    tickets = Ticket.query.order_by(desc(Ticket.created_at)).all()
-    return render_template("admin/all_tickets.html", tickets=tickets)
+    tickets = (
+        Ticket.query
+        .order_by(
+            desc(Ticket.updated_at),
+            desc(Ticket.created_at)
+        )
+        .all()
+    )
+
+    return render_template(
+        "admin/all_tickets.html",
+        tickets=tickets
+    )
 
 
 @admin_blueprint.route("/notification/open/<int:nid>", methods=["GET"])
@@ -894,7 +1080,18 @@ def open_notification(nid):
         and notification.url != "#"
         and f"/admin/notification/open/{notification.id}" not in notification.url
     ):
-        return redirect(notification.url)
+        if (
+            notification.url
+            and notification.url != "#"
+        ):
+            notification_url = str(
+                notification.url
+            ).strip()
+
+            if notification_url.startswith("/"):
+                return redirect(
+                    notification_url
+                )
 
     if notification.notification_type:
         return redirect(get_feature_url(notification.notification_type, "Administrator"))
@@ -910,28 +1107,65 @@ def open_notification(nid):
         return redirect(url_for("admin.knowledge_base"))
 
     if "ai" in message or "training" in message:
-        return redirect(url_for("admin.review_queue"))
+        return redirect(
+            url_for(
+                "admin.ai_review_center",
+                tab="pending"
+            )
+        )
 
     if "system" in message:
         return redirect(url_for("admin.system_health"))
 
     return redirect(url_for("admin.dashboard"))
 
-@admin_blueprint.route("/active-chats", methods=["GET"])
+@admin_blueprint.route(
+    "/active-chats",
+    methods=["GET"]
+)
 @login_required(role="Administrator")
 def active_chats():
     auto_close_waiting_customer_tickets()
     notify_unassigned_tickets()
 
+    closed_status_id = get_closed_status_id()
+
+    solved_status_id = get_status_id(
+        "Solved",
+        fallback=None
+    )
+
+    excluded_status_ids = [
+        status_id
+        for status_id in [
+            closed_status_id,
+            solved_status_id
+        ]
+        if status_id is not None
+    ]
+
+    query = Ticket.query
+
+    if excluded_status_ids:
+        query = query.filter(
+            ~Ticket.status_id.in_(
+                excluded_status_ids
+            )
+        )
+
     active_tickets = (
-        Ticket.query
-        .filter(Ticket.status_id != 4)
-        .order_by(desc(Ticket.updated_at), desc(Ticket.created_at))
+        query
+        .order_by(
+            desc(Ticket.updated_at),
+            desc(Ticket.created_at)
+        )
         .all()
     )
 
-    return render_template("admin/active_chats.html", active_tickets=active_tickets)
-
+    return render_template(
+        "admin/active_chats.html",
+        active_tickets=active_tickets
+    )
 
 # ============================================================
 # TICKET ACTIONS
@@ -963,6 +1197,13 @@ def claim_ticket(id):
 
     db.session.add(comment)
     db.session.commit()
+    if ticket.author:
+
+        send_ticket_assigned_email(
+            ticket.author,
+            ticket,
+            current_user
+        )
 
     notify_customer(ticket, "joined your support ticket")
 
@@ -973,7 +1214,10 @@ def claim_ticket(id):
     return redirect(url_for("admin.view_ticket", id=id))
 
 
-@admin_blueprint.route("/create-ticket", methods=["GET", "POST"])
+@admin_blueprint.route(
+    "/create-ticket",
+    methods=["GET", "POST"]
+)
 @login_required(role="Administrator")
 def create_ticket():
     form = TicketForm()
@@ -983,15 +1227,47 @@ def create_ticket():
         attachment = None
         original_f = None
 
+        # ----------------------------------------------------
+        # SAVE OPTIONAL ATTACHMENT
+        # ----------------------------------------------------
+
         if file and file.filename:
-            folder_id = os.path.join(path, "app/static/uploads/attachments", str(current_user.id))
-            os.makedirs(folder_id, exist_ok=True)
+            folder_id = os.path.join(
+                path,
+                "app",
+                "static",
+                "uploads",
+                "attachments",
+                str(current_user.id)
+            )
 
-            original_f = secure_filename(file.filename)
-            _, ext = os.path.splitext(original_f)
-            attachment = secure_filename(uuid.uuid4().hex + ext.lower())
+            os.makedirs(
+                folder_id,
+                exist_ok=True
+            )
 
-            file.save(os.path.join(folder_id, attachment))
+            original_f = secure_filename(
+                file.filename
+            )
+
+            _, ext = os.path.splitext(
+                original_f
+            )
+
+            attachment = secure_filename(
+                uuid.uuid4().hex + ext.lower()
+            )
+
+            file.save(
+                os.path.join(
+                    folder_id,
+                    attachment
+                )
+            )
+
+        # ----------------------------------------------------
+        # CREATE TICKET
+        # ----------------------------------------------------
 
         ticket = Ticket(
             number=random_numbers(),
@@ -1009,94 +1285,377 @@ def create_ticket():
         db.session.add(ticket)
         db.session.commit()
 
-        emit_global_event("ticket_created", ticket, "Ticket created by admin.")
+        # ----------------------------------------------------
+        # SEND TICKET-CREATED EMAIL TO THE AUTHOR
+        # ----------------------------------------------------
 
-        flash("Ticket has been created.", "primary")
-        return redirect(url_for("admin.new_tickets"))
+        email_sent = send_ticket_created_email(
+            current_user,
+            ticket
+        )
 
-    return render_template("admin/new_tickets.html", form=form, tickets=[])
+        if not email_sent:
+            current_app.logger.error(
+                "Administrator ticket-created email failed "
+                "for ticket_id=%s administrator_id=%s",
+                ticket.id,
+                current_user.id
+            )
+
+        # ----------------------------------------------------
+        # SYSTEM EVENT
+        # ----------------------------------------------------
+
+        log_system_event(
+            event_type="Ticket Created",
+            severity="Info",
+            message=(
+                f"Ticket #{ticket.number} was created "
+                f"by administrator {current_user.email}."
+            ),
+            user_id=current_user.id,
+            ticket_id=ticket.id
+        )
+
+        # ----------------------------------------------------
+        # REAL-TIME UPDATE
+        # ----------------------------------------------------
+
+        emit_global_event(
+            "ticket_created",
+            ticket,
+            "Ticket created by administrator."
+        )
+
+        if email_sent:
+            flash(
+                "Ticket has been created. "
+                "A confirmation email was sent.",
+                "success"
+            )
+        else:
+            flash(
+                "Ticket has been created, but the confirmation "
+                "email could not be sent.",
+                "warning"
+            )
+
+        return redirect(
+            url_for("admin.new_tickets")
+        )
+
+    return render_template(
+        "admin/new_tickets.html",
+        form=form,
+        tickets=[]
+    )
 
 
-@admin_blueprint.route("/view-ticket/<int:id>", methods=["GET", "POST"])
+@admin_blueprint.route(
+    "/view-ticket/<int:id>",
+    methods=["GET", "POST"]
+)
 @login_required(role="Administrator")
 def view_ticket(id):
-    ticket = Ticket.query.filter_by(id=id).first()
-
-    if not ticket:
-        return redirect(url_for("admin.new_ticket"))
+    ticket = Ticket.query.get_or_404(id)
 
     comments = (
         Comment.query
-        .filter(Comment.ticket_id == id)
-        .order_by(Comment.created_at.asc())
+        .filter(
+            Comment.ticket_id == ticket.id
+        )
+        .order_by(
+            Comment.created_at.asc()
+        )
         .all()
     )
 
-    form = UpdateTicketForm(
-        owner=ticket.owner_id,
-        priority=ticket.priority_id,
-        status=ticket.status_id
-    )
-
+    form = UpdateTicketForm()
     comment_form = CommentForm()
 
+    closed_status_id = (
+        get_closed_status_id()
+    )
+
+    is_closed = (
+        ticket.status_id
+        == closed_status_id
+    )
+
+    # ========================================================
+    # LOAD CURRENT VALUES INTO THE FORM
+    # ========================================================
+
+    if request.method == "GET":
+        form.owner.data = (
+            str(ticket.owner_id)
+            if ticket.owner_id
+            else ""
+        )
+
+        form.priority.data = (
+            str(ticket.priority_id)
+            if ticket.priority_id
+            else ""
+        )
+
+        form.status.data = (
+            str(ticket.status_id)
+            if ticket.status_id
+            else ""
+        )
+
+    # ========================================================
+    # UPDATE TICKET
+    # ========================================================
+
     if form.validate_on_submit():
-        if ticket.status_id == get_closed_status_id():
-            flash("Closed tickets cannot be updated. Please use Reopen Ticket first.", "warning")
-            return redirect(url_for("admin.view_ticket", id=id))
+
+        if is_closed:
+            flash(
+                "Closed tickets cannot be changed. "
+                "Reopen the ticket first.",
+                "warning"
+            )
+
+            return redirect(
+                url_for(
+                    "admin.view_ticket",
+                    id=ticket.id
+                )
+            )
 
         old_owner_id = ticket.owner_id
-        old_status_id = ticket.status_id
         old_priority_id = ticket.priority_id
+        old_status_id = ticket.status_id
 
-        new_status_id = int(form.status.data)
-        new_priority_id = int(form.priority.data)
+        now = datetime.datetime.utcnow()
 
-        if not form.owner.data:
-            if ticket.owner_id:
-                notify_customer(ticket, "unassigned ticket")
-                notify_owner(ticket, "unassigned ticket")
+        # ====================================================
+        # CONVERT FORM VALUES
+        # ====================================================
 
-            ticket.owner_id = None
+        try:
+            new_owner_id = (
+                int(form.owner.data)
+                if form.owner.data
+                else None
+            )
 
-        else:
-            new_owner_id = int(form.owner.data)
+            new_priority_id = (
+                int(form.priority.data)
+                if form.priority.data
+                else old_priority_id
+            )
 
-            if old_owner_id != new_owner_id:
-                notify_customer(ticket, "assigned ticket")
+            new_status_id = (
+                int(form.status.data)
+                if form.status.data
+                else old_status_id
+            )
 
-                if new_owner_id != current_user.id:
-                    notify_user(
-                        message="assigned ticket",
-                        receiver_id=new_owner_id,
-                        sender_id=current_user.id,
-                        ticket_id=ticket.id
-                    )
+        except (TypeError, ValueError):
+            flash(
+                "One or more selected values are invalid.",
+                "danger"
+            )
 
-                join_message = f"Support admin {current_user.name} joined the chat."
+            return redirect(
+                url_for(
+                    "admin.view_ticket",
+                    id=ticket.id
+                )
+            )
 
-                join_comment = Comment(
-                    comment=join_message,
-                    author_id=current_user.id,
-                    ticket_id=ticket.id
+        # ====================================================
+        # VALIDATE OWNER
+        # ====================================================
+
+        new_owner = None
+
+        if new_owner_id:
+            new_owner = User.query.get(
+                new_owner_id
+            )
+
+            if (
+                not new_owner
+                or new_owner.role
+                not in [
+                    "Agent",
+                    "Administrator"
+                ]
+            ):
+                flash(
+                    "The selected assignee is invalid.",
+                    "danger"
                 )
 
-                db.session.add(join_comment)
+                return redirect(
+                    url_for(
+                        "admin.view_ticket",
+                        id=ticket.id
+                    )
+                )
 
+        # ====================================================
+        # VALIDATE PRIORITY
+        # ====================================================
+
+        if (
+            new_priority_id
+            and not Priority.query.get(
+                new_priority_id
+            )
+        ):
+            flash(
+                "The selected priority is invalid.",
+                "danger"
+            )
+
+            return redirect(
+                url_for(
+                    "admin.view_ticket",
+                    id=ticket.id
+                )
+            )
+
+        # ====================================================
+        # VALIDATE STATUS
+        # ====================================================
+
+        if (
+            new_status_id
+            and not Status.query.get(
+                new_status_id
+            )
+        ):
+            flash(
+                "The selected status is invalid.",
+                "danger"
+            )
+
+            return redirect(
+                url_for(
+                    "admin.view_ticket",
+                    id=ticket.id
+                )
+            )
+
+        assignment_comment = None
+        close_comment = None
+
+        # Used to prevent the unassigned timer from being reset
+        # whenever an already-unassigned ticket is edited.
+        became_unassigned = (
+            old_owner_id is not None
+            and new_owner_id is None
+        )
+
+        became_assigned = (
+            old_owner_id is None
+            and new_owner_id is not None
+        )
+
+        was_reassigned = (
+            old_owner_id is not None
+            and new_owner_id is not None
+            and old_owner_id != new_owner_id
+        )
+
+        # ====================================================
+        # OWNER CHANGE
+        # ====================================================
+
+        if old_owner_id != new_owner_id:
             ticket.owner_id = new_owner_id
 
-        if old_priority_id != new_priority_id:
-            notify_customer(ticket, "updated priority on ticket")
-            notify_owner(ticket, "updated priority on ticket")
+            if new_owner:
+                assignment_message = (
+                    f"🔄 Ticket assigned to "
+                    f"{new_owner.name} by administrator "
+                    f"{current_user.name}."
+                )
 
-        ticket.priority_id = new_priority_id
+            else:
+                assignment_message = (
+                    f"🔄 Ticket was unassigned by administrator "
+                    f"{current_user.name}."
+                )
 
-        if old_status_id != new_status_id:
-            notify_customer(ticket, "updated status on ticket")
-            notify_owner(ticket, "updated status on ticket")
+            assignment_comment = Comment(
+                comment=assignment_message,
+                author_id=current_user.id,
+                ticket_id=ticket.id
+            )
 
-        if old_status_id != new_status_id and new_status_id == get_closed_status_id():
-            close_message = f"Ticket closed by admin {current_user.name}."
+            db.session.add(
+                assignment_comment
+            )
+
+            # Reset reminder flags whenever assignment changes.
+            ticket.unassigned_15min_sent = False
+            ticket.unassigned_30min_sent = False
+
+            # Start the unassigned waiting timer exactly now.
+            if became_unassigned:
+                ticket.updated_at = now
+
+        # ====================================================
+        # PRIORITY
+        # ====================================================
+
+        ticket.priority_id = (
+            new_priority_id
+        )
+
+        # ====================================================
+        # STATUS
+        # ====================================================
+
+        ticket.status_id = (
+            new_status_id
+        )
+
+        waiting_status_id = (
+            get_waiting_customer_status_id()
+        )
+
+        if (
+            waiting_status_id
+            and new_status_id
+            == waiting_status_id
+        ):
+            # Only start the 48-hour customer-response timer
+            # when the ticket first enters this status.
+            if (
+                old_status_id
+                != waiting_status_id
+                or not ticket.waiting_customer_since
+            ):
+                ticket.waiting_customer_since = now
+
+            ticket.inactive_reminder_sent = False
+
+        else:
+            ticket.waiting_customer_since = None
+            ticket.inactive_reminder_sent = False
+
+        # ====================================================
+        # CLOSED STATUS
+        # ====================================================
+
+        status_changed_to_closed = (
+            old_status_id != new_status_id
+            and new_status_id
+            == closed_status_id
+        )
+
+        if status_changed_to_closed:
+            close_message = (
+                f"🔒 Ticket closed by administrator "
+                f"{current_user.name}."
+            )
 
             close_comment = Comment(
                 comment=close_message,
@@ -1104,64 +1663,201 @@ def view_ticket(id):
                 ticket_id=ticket.id
             )
 
-            db.session.add(close_comment)
+            db.session.add(
+                close_comment
+            )
 
-            ChatMessage.query.filter(
-                ChatMessage.user_id == ticket.author_id
-            ).update({
-                "customer_visible": False
-            })
+        # ====================================================
+        # UPDATED TIME
+        # ====================================================
 
-        ticket.status_id = new_status_id
-        if new_status_id == get_waiting_customer_status_id():
-            ticket.waiting_customer_since = datetime.datetime.utcnow()
-            ticket.inactive_reminder_sent = False
+        if became_unassigned:
+            # updated_at was already set above and now acts as
+            # the start time for the unassigned waiting period.
+            pass
+
+        elif new_owner_id is None:
+            # The ticket was already unassigned before this edit.
+            # Do not overwrite updated_at, because doing so would
+            # restart the 15-minute and 30-minute timers.
+            pass
+
         else:
-            ticket.waiting_customer_since = None
-            ticket.inactive_reminder_sent = False
-        db.session.commit()
+            ticket.updated_at = now
 
-        if old_owner_id != ticket.owner_id and ticket.owner_id is not None:
-            latest_join = (
-                Comment.query
-                .filter(Comment.ticket_id == ticket.id)
-                .filter(Comment.comment.like("Support admin%joined the chat."))
-                .order_by(desc(Comment.created_at))
-                .first()
+        # ====================================================
+        # SAVE DATABASE CHANGES
+        # ====================================================
+
+        try:
+            db.session.commit()
+
+        except Exception:
+            db.session.rollback()
+
+            current_app.logger.exception(
+                "Admin ticket update failed "
+                "for ticket_id=%s",
+                ticket.id
             )
 
-            if latest_join:
-                emit_comment(ticket, latest_join, is_attachment=False)
-                emit_ticket_event(ticket, "agent_joined", latest_join.comment)
-
-        if old_status_id != new_status_id and new_status_id == get_closed_status_id():
-            latest_close = (
-                Comment.query
-                .filter(Comment.ticket_id == ticket.id)
-                .filter(Comment.comment.like("Ticket closed by admin%"))
-                .order_by(desc(Comment.created_at))
-                .first()
+            flash(
+                "The ticket could not be updated.",
+                "danger"
             )
 
-            if latest_close:
-                emit_comment(ticket, latest_close, is_attachment=False)
-                emit_ticket_event(ticket, "ticket_closed", latest_close.comment)
+            return redirect(
+                url_for(
+                    "admin.view_ticket",
+                    id=ticket.id
+                )
+            )
 
-        emit_global_event("ticket_updated", ticket, "Ticket updated by admin.")
+        # ====================================================
+        # ASSIGNMENT EMAIL
+        # ====================================================
 
-        flash("Ticket has been updated.", "primary")
-        return redirect(url_for("admin.view_tickets", id=id))
+        if (
+            old_owner_id != new_owner_id
+            and new_owner
+            and ticket.author
+        ):
+            try:
+                if was_reassigned:
+                    # This service accepts only:
+                    # customer and ticket.
+                    send_ticket_reassigned_email(
+                        ticket.author,
+                        ticket
+                    )
+
+                elif became_assigned:
+                    send_ticket_assigned_email(
+                        ticket.author,
+                        ticket,
+                        new_owner
+                    )
+
+            except Exception:
+                current_app.logger.exception(
+                    "Assignment email failed "
+                    "for ticket_id=%s",
+                    ticket.id
+                )
+
+        # ====================================================
+        # CLOSED EMAILS
+        # ====================================================
+
+        if (
+            status_changed_to_closed
+            and ticket.author
+        ):
+            try:
+                send_ticket_closed_email(
+                    ticket.author,
+                    ticket
+                )
+
+            except Exception:
+                current_app.logger.exception(
+                    "Closed-ticket email failed "
+                    "for ticket_id=%s",
+                    ticket.id
+                )
+
+            try:
+                send_satisfaction_email(
+                    ticket.author,
+                    ticket
+                )
+
+            except Exception:
+                current_app.logger.exception(
+                    "Satisfaction email failed "
+                    "for ticket_id=%s",
+                    ticket.id
+                )
+
+            socketio.emit(
+                "customer_ticket_closed",
+                {
+                    "ticket_id": ticket.id,
+                    "message": "Ticket closed."
+                },
+                room=f"user_{ticket.author_id}"
+            )
+
+        # ====================================================
+        # SOCKET EVENTS
+        # ====================================================
+
+        if assignment_comment:
+            emit_comment(
+                ticket,
+                assignment_comment,
+                is_attachment=False
+            )
+
+            if new_owner:
+                emit_ticket_event(
+                    ticket,
+                    "agent_joined",
+                    assignment_comment.comment
+                )
+
+            else:
+                emit_ticket_event(
+                    ticket,
+                    "ticket_unassigned",
+                    assignment_comment.comment
+                )
+
+        if close_comment:
+            emit_comment(
+                ticket,
+                close_comment,
+                is_attachment=False
+            )
+
+            emit_ticket_event(
+                ticket,
+                "ticket_closed",
+                close_comment.comment
+            )
+
+        emit_global_event(
+            "ticket_updated",
+            ticket,
+            "Ticket updated."
+        )
+
+        flash(
+            "Ticket updated successfully.",
+            "success"
+        )
+
+        return redirect(
+            url_for(
+                "admin.view_ticket",
+                id=ticket.id
+            )
+        )
 
     return render_template(
         "admin/view_ticket.html",
+        ticket=ticket,
+        comments=comments,
         form=form,
         comment_form=comment_form,
-        ticket=ticket,
-        comments=comments
+        is_closed=is_closed
     )
 
 
-@admin_blueprint.route("/comment-ticket/<int:id>", methods=["GET", "POST"])
+@admin_blueprint.route(
+    "/comment-ticket/<int:id>",
+    methods=[ "POST"]
+)
 @login_required(role="Administrator")
 def comment_ticket(id):
     ticket = Ticket.query.get_or_404(id)
@@ -1174,7 +1870,9 @@ def comment_ticket(id):
         }), 400
 
     if comment_form.validate_on_submit():
-        comment_text = (comment_form.comment.data or "").strip()
+        comment_text = (
+            comment_form.comment.data or ""
+        ).strip()
 
         if not comment_text:
             return jsonify({
@@ -1191,27 +1889,90 @@ def comment_ticket(id):
         db.session.add(new_comment)
         db.session.commit()
 
-        notify_customer(ticket, "commented on ticket")
-        notify_owner(ticket, "commented on ticket")
+        # Send email to the customer after the reply is saved.
+        email_sent = False
 
-        emit_comment(ticket, new_comment, is_attachment=False)
+        if ticket.author:
+            email_sent = send_ticket_reply_email(
+                ticket.author,
+                ticket,
+                comment_text
+            )
+
+            if not email_sent:
+                current_app.logger.error(
+                    "Admin ticket-reply email failed "
+                    "for ticket_id=%s customer_id=%s",
+                    ticket.id,
+                    ticket.author_id
+                )
+
+        notify_customer(
+            ticket,
+            "commented on ticket"
+        )
+
+        notify_owner(
+            ticket,
+            "commented on ticket"
+        )
+
+        emit_comment(
+            ticket,
+            new_comment,
+            is_attachment=False
+        )
 
         return jsonify({
             "success": True,
-            "comment": serialize_comment(new_comment)
+            "comment": serialize_comment(
+                new_comment
+            ),
+            "email_sent": email_sent
         }), 200
 
-    return jsonify({"success": False, "message": "Invalid message."}), 400
+    return jsonify({
+        "success": False,
+        "message": "Invalid message."
+    }), 400
 
 
-@admin_blueprint.route("/ticket/reopen/<int:id>", methods=["GET", "POST"])
+@admin_blueprint.route("/ticket/reopen/<int:id>", methods=["POST"])
 @login_required(role="Administrator")
 def reopen_ticket(id):
     ticket = Ticket.query.get_or_404(id)
+    if ticket.status_id != get_closed_status_id():
+        flash(
+            "Only closed tickets can be reopened.",
+            "warning"
+        )
+
+        return redirect(
+            url_for(
+                "admin.view_ticket",
+                id=ticket.id
+            )
+        )
+
+    old_status = ticket.status_id
 
     ticket.status_id = get_pending_status_id()
 
-    reopen_message = f"Ticket reopened by admin {current_user.name}."
+    ticket.waiting_customer_since = None
+    ticket.inactive_reminder_sent = False
+
+    ChatMessage.query.filter(
+        ChatMessage.ticket_id == ticket.id
+    ).update(
+        {
+            "customer_visible": True
+        }
+    )
+
+    reopen_message = (
+        f"Ticket reopened by admin "
+        f"{current_user.name}."
+    )
 
     comment = Comment(
         comment=reopen_message,
@@ -1222,73 +1983,247 @@ def reopen_ticket(id):
     db.session.add(comment)
     db.session.commit()
 
-    notify_customer(ticket, "reopened ticket")
-    notify_owner(ticket, "reopened ticket")
-    notify_agents(ticket, "reopened ticket")
+    if ticket.author:
+        send_ticket_reopened_email(
+            ticket.author,
+            ticket
+        )
 
-    emit_comment(ticket, comment, is_attachment=False)
-    emit_ticket_event(ticket, "ticket_reopened", reopen_message)
+    notify_customer(
+        ticket,
+        "reopened ticket"
+    )
 
-    flash("Ticket has been reopened and changed to Pending.", "primary")
-    return redirect(url_for("admin.view_ticket", id=ticket.id))
+    notify_owner(
+        ticket,
+        "reopened ticket"
+    )
+
+    notify_agents(
+        ticket,
+        "reopened ticket"
+    )
+
+    emit_comment(
+        ticket,
+        comment,
+        is_attachment=False
+    )
+
+    emit_ticket_event(
+        ticket,
+        "ticket_reopened",
+        reopen_message
+    )
+
+    socketio.emit(
+        "customer_ticket_reopened",
+        {
+            "ticket_id": ticket.id,
+            "status_id": ticket.status_id
+        },
+        room=f"user_{ticket.author_id}"
+    )
+
+    emit_global_refresh(
+        "ticket_reopened",
+        ticket
+    )
+
+    flash(
+        "Ticket reopened successfully.",
+        "primary"
+    )
+
+    return redirect(
+        url_for(
+            "admin.view_ticket",
+            id=ticket.id
+        )
+    )
 
 
-@admin_blueprint.route("/ticket/delete/<int:uid>/<int:tid>", methods=["GET", "POST"])
+@admin_blueprint.route(
+    "/ticket/delete/<int:uid>/<int:tid>",
+    methods=["POST"]
+)
 @login_required(role="Administrator")
 def delete_ticket(uid, tid):
     ticket = Ticket.query.get_or_404(tid)
+        # Save required ticket information before deletion.
+    ticket_id = ticket.id
+    ticket_number = ticket.number
+    ticket_subject = ticket.subject or "No subject"
 
-    if request.method == "POST":
-        ticket_id = ticket.id
-        ticket_number = ticket.number
+    customer = ticket.author
 
-        if ticket.file_link:
-            folder_id = os.path.join(
-                path,
-                "app/static/uploads/attachments",
-                str(uid)
-            )
+    # ----------------------------------------------------
+    # SEND DELETION EMAIL BEFORE DATABASE DELETE
+    # ----------------------------------------------------
 
-            file_path = os.path.join(folder_id, ticket.file_link)
+    email_sent = False
 
-            if os.path.exists(file_path):
-                os.remove(file_path)
-        
-        log_system_event(
-            event_type="Ticket Deleted",
-            severity="Warning",
-            message=f"Ticket #{ticket.number} was deleted by admin {current_user.email}.",
-            user_id=current_user.id,
-            ticket_id=ticket.id
+    if customer and customer.email:
+        email_sent = send_ticket_deleted_email(
+            customer,
+            ticket_number=str(ticket_number),
+            ticket_subject=ticket_subject,
+            deleted_by=(
+                f"administrator {current_user.name}"
+            ),
+            deleted_ticket_id=ticket.id
         )
 
+        if not email_sent:
+            current_app.logger.error(
+                "Admin ticket-deleted email failed "
+                "for ticket_id=%s customer_id=%s",
+                ticket.id,
+                ticket.author_id
+            )
 
-        db.session.delete(ticket)
-        db.session.commit()
+    # ----------------------------------------------------
+    # DELETE ATTACHMENT
+    # ----------------------------------------------------
 
-        payload = {
-            "ticket_id": ticket_id,
-            "ticket_number": ticket_number,
-            "message": "Ticket deleted by admin."
-        }
+    if ticket.file_link:
+        folder_id = os.path.join(
+            path,
+            "app",
+            "static",
+            "uploads",
+            "attachments",
+            str(ticket.author_id)
+        )
 
-        socketio.emit("ticket_deleted", payload)
-        socketio.emit("global_ticket_updated", payload)
-        socketio.emit("sidebar_counts_updated", payload)
-        socketio.emit("notification_updated", payload)
-        socketio.emit("analytics_updated", payload)
+        file_path = os.path.join(
+            folder_id,
+            ticket.file_link
+        )
 
-        flash("Ticket has been deleted.", "primary")
-        return redirect(url_for("admin.all_tickets"))
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
 
-    return redirect(url_for("admin.all_tickets"))
+            except OSError as error:
+                current_app.logger.exception(
+                    "Could not delete attachment for "
+                    "ticket_id=%s: %s",
+                    ticket.id,
+                    error
+                )
+
+    # Log the action before deletion, but do not keep a
+    # foreign key to a record that is about to disappear.
+    log_system_event(
+        event_type="Ticket Deleted",
+        severity="Warning",
+        message=(
+            f"Ticket #{ticket_number} was deleted "
+            f"by administrator {current_user.email}."
+        ),
+        user_id=current_user.id,
+        ticket_id=None
+    )
+
+    # ----------------------------------------------------
+    # DELETE DATABASE TICKET
+    # ----------------------------------------------------
+
+    db.session.delete(ticket)
+    db.session.commit()
+
+    payload = {
+        "ticket_id": ticket_id,
+        "ticket_number": ticket_number,
+        "message": "Ticket deleted by administrator."
+    }
+
+    socketio.emit(
+        "ticket_deleted",
+        payload
+    )
+
+    socketio.emit(
+        "global_ticket_updated",
+        payload
+    )
+
+    socketio.emit(
+        "sidebar_counts_updated",
+        payload
+    )
+
+    socketio.emit(
+        "notification_updated",
+        payload
+    )
+
+    socketio.emit(
+        "analytics_updated",
+        payload
+    )
+
+    if email_sent:
+        flash(
+            "Ticket has been deleted. "
+            "A confirmation email was sent to the customer.",
+            "success"
+        )
+    else:
+        flash(
+            "Ticket has been deleted, but the confirmation "
+            "email could not be sent.",
+            "warning"
+        )
+
+    return redirect(
+        url_for("admin.all_tickets")
+    )
 
 
-@admin_blueprint.route("/download/attachment/<int:id>/<filename>")
+@admin_blueprint.route(
+    "/download/attachment/<int:id>/<filename>",
+    methods=["GET"]
+)
+@login_required(role="Administrator")
 def download_attachment(id, filename):
-    folder_id = os.path.join(path, "app/static/uploads/attachments", str(id))
-    location = os.path.join(folder_id, filename)
-    return send_file(location, as_attachment=True)
+    safe_filename = secure_filename(
+        filename
+    )
+
+    if (
+        not safe_filename
+        or safe_filename != filename
+    ):
+        abort(400)
+
+    ticket = (
+        Ticket.query
+        .filter(
+            Ticket.author_id == id,
+            Ticket.file_link == safe_filename
+        )
+        .first()
+    )
+
+    if not ticket:
+        abort(404)
+
+    folder_id = os.path.join(
+        path,
+        "app",
+        "static",
+        "uploads",
+        "attachments",
+        str(ticket.author_id)
+    )
+
+    return send_from_directory(
+        folder_id,
+        safe_filename,
+        as_attachment=True
+    )
 
 
 # ============================================================
@@ -1319,15 +2254,32 @@ def category():
     return render_template("admin/category.html", form=form, categories=categories)
 
 
-@admin_blueprint.route("/category/update/<int:id>", methods=["GET", "POST"])
+@admin_blueprint.route(
+    "/category/update/<int:id>",
+    methods=["GET", "POST"]
+)
 @login_required(role="Administrator")
 def update_category(id):
-    category_obj = Category.query.get_or_404(id)
-    form = CategoryForm()
+    category_obj = (
+        Category.query.get_or_404(id)
+    )
+
+    form = CategoryForm(
+        obj=category_obj
+    )
+
+    if request.method == "GET":
+        form.category.data = (
+            category_obj.category
+        )
 
     if form.validate_on_submit():
-        category_obj.category = form.category.data
+        category_obj.category = (
+            form.category.data.strip()
+        )
+
         db.session.commit()
+
         notify_feature_change(
             "system_settings_updated",
             "System Settings were updated.",
@@ -1335,32 +2287,93 @@ def update_category(id):
             agent=True
         )
 
+        flash(
+            "Category has been updated.",
+            "success"
+        )
 
-        flash("Category has been updated.", "primary")
-        return redirect(url_for("admin.category"))
+        return redirect(
+            url_for("admin.category")
+        )
 
-    return render_template("admin/category.html", form=form)
+    return render_template(
+        "admin/category.html",
+        form=form,
+        categories=Category.query.all(),
+        editing_category=category_obj
+    )
 
 
-@admin_blueprint.route("/category/delete/<int:id>", methods=["GET", "POST"])
+@admin_blueprint.route(
+    "/category/delete/<int:id>",
+    methods=["POST"]
+)
 @login_required(role="Administrator")
 def delete_category(id):
-    category_obj = Category.query.get_or_404(id)
+    category_obj = (
+        Category.query.get_or_404(id)
+    )
 
-    if request.method == "POST":
-        db.session.delete(category_obj)
-        db.session.commit()
-        notify_feature_change(
-            "system_settings_updated",
-            "System Settings were updated.",
-            admin=True,
-            agent=True
+    linked_ticket = (
+        Ticket.query
+        .filter(
+            Ticket.category_id
+            == category_obj.id
+        )
+        .first()
+    )
+
+    linked_faq = (
+        FAQ.query
+        .filter(
+            FAQ.category_id
+            == category_obj.id
+        )
+        .first()
+    )
+
+    linked_article = (
+        KnowledgeArticle.query
+        .filter(
+            KnowledgeArticle.category_id
+            == category_obj.id
+        )
+        .first()
+    )
+
+    if (
+        linked_ticket
+        or linked_faq
+        or linked_article
+    ):
+        flash(
+            "This category cannot be deleted because "
+            "it is currently in use.",
+            "warning"
         )
 
+        return redirect(
+            url_for("admin.category")
+        )
 
-        flash("Category has been deleted.", "primary")
+    db.session.delete(category_obj)
+    db.session.commit()
 
-    return redirect(url_for("admin.category"))
+    notify_feature_change(
+        "system_settings_updated",
+        "System Settings were updated.",
+        admin=True,
+        agent=True
+    )
+
+    flash(
+        "Category has been deleted.",
+        "success"
+    )
+
+    return redirect(
+        url_for("admin.category")
+    )
 
 
 @admin_blueprint.route("/priorities", methods=["GET", "POST"])
@@ -1387,15 +2400,32 @@ def priority():
     return render_template("admin/priority.html", form=form, priorities=priorities)
 
 
-@admin_blueprint.route("/priority/update/<int:id>", methods=["GET", "POST"])
+@admin_blueprint.route(
+    "/priority/update/<int:id>",
+    methods=["GET", "POST"]
+)
 @login_required(role="Administrator")
 def update_priority(id):
-    priority_obj = Priority.query.get_or_404(id)
-    form = PriorityForm()
+    priority_obj = (
+        Priority.query.get_or_404(id)
+    )
+
+    form = PriorityForm(
+        obj=priority_obj
+    )
+
+    if request.method == "GET":
+        form.priority.data = (
+            priority_obj.priority
+        )
 
     if form.validate_on_submit():
-        priority_obj.priority = form.priority.data
+        priority_obj.priority = (
+            form.priority.data.strip()
+        )
+
         db.session.commit()
+
         notify_feature_change(
             "system_settings_updated",
             "System Settings were updated.",
@@ -1403,30 +2433,71 @@ def update_priority(id):
             agent=True
         )
 
-        flash("Priority has been updated.", "primary")
-        return redirect(url_for("admin.priority"))
+        flash(
+            "Priority has been updated.",
+            "success"
+        )
 
-    return render_template("admin/priority.html", form=form)
+        return redirect(
+            url_for("admin.priority")
+        )
+
+    return render_template(
+        "admin/priority.html",
+        form=form,
+        priorities=Priority.query.all(),
+        editing_priority=priority_obj
+    )
 
 
-@admin_blueprint.route("/priority/delete/<int:id>", methods=["GET", "POST"])
+@admin_blueprint.route(
+    "/priority/delete/<int:id>",
+    methods=["POST"]
+)
 @login_required(role="Administrator")
 def delete_priority(id):
-    priority_obj = Priority.query.get_or_404(id)
+    priority_obj = (
+        Priority.query.get_or_404(id)
+    )
 
-    if request.method == "POST":
-        db.session.delete(priority_obj)
-        db.session.commit()
-        notify_feature_change(
-            "system_settings_updated",
-            "System Settings were updated.",
-            admin=True,
-            agent=True
+    linked_ticket = (
+        Ticket.query
+        .filter(
+            Ticket.priority_id
+            == priority_obj.id
+        )
+        .first()
+    )
+
+    if linked_ticket:
+        flash(
+            "This priority cannot be deleted because "
+            "it is currently assigned to tickets.",
+            "warning"
         )
 
-        flash("Priority has been deleted.", "primary")
+        return redirect(
+            url_for("admin.priority")
+        )
 
-    return redirect(url_for("admin.priority"))
+    db.session.delete(priority_obj)
+    db.session.commit()
+
+    notify_feature_change(
+        "system_settings_updated",
+        "System Settings were updated.",
+        admin=True,
+        agent=True
+    )
+
+    flash(
+        "Priority has been deleted.",
+        "success"
+    )
+
+    return redirect(
+        url_for("admin.priority")
+    )
 
 
 @admin_blueprint.route("/statuses", methods=["GET"])
@@ -1471,10 +2542,19 @@ def create_account():
     return render_template("admin/create_account.html", form=form, role_form=role_form, users=users)
 
 
-@admin_blueprint.route("/user/delete/<int:id>", methods=["GET", "POST"])
+@admin_blueprint.route("/user/delete/<int:id>", methods=["POST"])
 @login_required(role="Administrator")
 def delete_account(id):
     user = User.query.get_or_404(id)
+    if user.id == current_user.id:
+        flash(
+            "You cannot delete your own account.",
+            "warning"
+        )
+
+        return redirect(
+            url_for("admin.create_account")
+        )
 
     if request.method == "POST":
         folder_id = os.path.join(path, "app/static/uploads/attachments", str(id))
@@ -1502,87 +2582,424 @@ def delete_account(id):
     return redirect(url_for("admin.create_account"))
 
 
-@admin_blueprint.route("/user/update/<int:id>", methods=["GET", "POST"])
+@admin_blueprint.route(
+    "/user/update/<int:id>",
+    methods=["POST"]
+)
 @login_required(role="Administrator")
 def update_role(id):
     user = User.query.get_or_404(id)
     role_form = UpdateRoleForm()
 
-    if role_form.validate_on_submit():
-        old_role = user.role
-
-        user.role = role_form.role.data
-
-        db.session.commit()
-        notify_feature_change(
-            "users_staff_updated",
-            "User/staff role was updated.",
-            admin=True,
-            agent=False
+    if not role_form.validate_on_submit():
+        flash(
+            "The selected role is invalid.",
+            "danger"
         )
 
-        log_system_event(
-            event_type="Role Changed",
-            severity="Warning",
-            message=f"User {user.email} role changed from {old_role} to {user.role} by {current_user.email}.",
-            user_id=current_user.id
+        return redirect(
+            url_for("admin.create_account")
         )
 
-        flash("User role has been updated.", "primary")
+    old_role = user.role
+    new_role = role_form.role.data
 
-        if current_user.id == user.id:
-            return redirect(url_for("auth.logout"))
+    if user.id == current_user.id:
+        if new_role != "Administrator":
+            flash(
+                "You cannot remove your own administrator role.",
+                "warning"
+            )
 
-        return redirect(url_for("admin.create_account"))
+            return redirect(
+                url_for("admin.create_account")
+            )
 
-    return render_template("admin/create_account.html", role_form=role_form)
+    user.role = new_role
+    db.session.commit()
+
+    notify_feature_change(
+        "users_staff_updated",
+        "User/staff role was updated.",
+        admin=True,
+        agent=False
+    )
+
+    log_system_event(
+        event_type="Role Changed",
+        severity="Warning",
+        message=(
+            f"User {user.email} role changed "
+            f"from {old_role} to {user.role} "
+            f"by {current_user.email}."
+        ),
+        user_id=current_user.id
+    )
+
+    flash(
+        "User role has been updated.",
+        "success"
+    )
+
+    return redirect(
+        url_for("admin.create_account")
+    )
 
 
-@admin_blueprint.route("/my-profile", methods=["GET", "POST"])
+@admin_blueprint.route(
+    "/my-profile",
+    methods=["GET", "POST"]
+)
 @login_required(role="Administrator")
 def my_profile():
-    user = User.query.filter(User.id == current_user.id).first()
+    user = db.session.get(
+        User,
+        current_user.id
+    )
+
+    if not user:
+        flash(
+            "Your account could not be found.",
+            "danger"
+        )
+
+        return redirect(
+            url_for("auth.logout")
+        )
+
     form = ChangeProfileForm()
 
+    if request.method == "GET":
+        form.name.data = user.name
+
     if form.validate_on_submit():
+        new_name = (
+            form.name.data or ""
+        ).strip()
+
+        if not new_name:
+            flash(
+                "Your name is required.",
+                "danger"
+            )
+
+            return redirect(
+                url_for("admin.my_profile")
+            )
+
+        user.name = new_name
+
         file = form.profile.data
 
         if file and file.filename:
-            _, ext = os.path.splitext(file.filename)
-            profile = secure_filename(str(user.id) + ext)
+            os.makedirs(
+                current_app.config["PROFILE_DIR"],
+                exist_ok=True
+            )
 
-            file.save(os.path.join(current_app.config["PROFILE_DIR"], profile))
+            original_filename = secure_filename(
+                file.filename
+            )
 
-            user.image = profile
+            _, extension = os.path.splitext(
+                original_filename
+            )
+
+            extension = extension.lower()
+
+            profile_filename = secure_filename(
+                f"{user.id}_{uuid.uuid4().hex}{extension}"
+            )
+
+            old_image = user.image
+
+            new_image_path = os.path.join(
+                current_app.config["PROFILE_DIR"],
+                profile_filename
+            )
+
+            file.save(
+                new_image_path
+            )
+
+            user.image = profile_filename
+
+            if (
+                old_image
+                and old_image != "default-profile.png"
+                and old_image != profile_filename
+            ):
+                old_image_path = os.path.join(
+                    current_app.config["PROFILE_DIR"],
+                    old_image
+                )
+
+                if os.path.isfile(old_image_path):
+                    try:
+                        os.remove(
+                            old_image_path
+                        )
+
+                    except OSError:
+                        current_app.logger.exception(
+                            "Could not remove old administrator "
+                            "profile image for user_id=%s",
+                            user.id
+                        )
+
+        try:
             db.session.commit()
 
-            flash("Your profile has been changed.", "primary")
-            return redirect(url_for("admin.my_profile"))
+        except Exception:
+            db.session.rollback()
 
-    return render_template("admin/my_profile.html", form=form, user=user)
+            current_app.logger.exception(
+                "Administrator profile update failed "
+                "for user_id=%s",
+                user.id
+            )
 
+            flash(
+                "Your profile could not be updated.",
+                "danger"
+            )
 
-@admin_blueprint.route("/change-password", methods=["GET", "POST"])
+            return redirect(
+                url_for("admin.my_profile")
+            )
+
+        socketio.emit(
+            "profile_updated",
+            {
+                "user_id": user.id,
+                "name": user.name,
+                "image": user.image,
+                "message": (
+                    "Administrator profile updated."
+                )
+            }
+        )
+
+        flash(
+            "Your profile has been updated.",
+            "success"
+        )
+
+        return redirect(
+            url_for("admin.my_profile")
+        )
+
+    return render_template(
+        "admin/my_profile.html",
+        form=form,
+        user=user
+    )
+
+@admin_blueprint.route(
+    "/change-password",
+    methods=["GET", "POST"]
+)
 @login_required(role="Administrator")
 def change_password():
-    user = User.query.filter(User.id == current_user.id).first()
+    user = db.session.get(
+        User,
+        current_user.id
+    )
+
+    if not user:
+        flash(
+            "Your account could not be found.",
+            "danger"
+        )
+
+        return redirect(
+            url_for("auth.logout")
+        )
+
     form = ChangePasswordForm()
 
     if form.validate_on_submit():
-        user.password = generate_password_hash(form.password.data)
-        db.session.commit()
-
-        log_system_event(
-            event_type="Password Changed",
-            severity="Info",
-            message=f"Administrator password changed for {user.email}.",
-            user_id=user.id
+        current_password = (
+            form.current_password.data or ""
         )
 
-        flash("Your password has been changed.", "primary")
-        return redirect(url_for("admin.change_password"))
+        new_password = (
+            form.password.data or ""
+        )
 
-    return render_template("admin/change_password.html", form=form)
+        if not check_password_hash(
+            user.password,
+            current_password
+        ):
+            flash(
+                "Current password is incorrect.",
+                "danger"
+            )
+
+            return redirect(
+                url_for("admin.change_password")
+            )
+
+        user.password = generate_password_hash(
+            new_password
+        )
+
+        user.failed_login_attempts = 0
+        user.locked_until = None
+
+        if hasattr(user, "updated_at"):
+            user.updated_at = (
+                datetime.datetime.utcnow()
+            )
+
+        try:
+            db.session.commit()
+
+        except Exception:
+            db.session.rollback()
+
+            current_app.logger.exception(
+                "Administrator password update failed "
+                "for user_id=%s",
+                user.id
+            )
+
+            flash(
+                "The password could not be updated.",
+                "danger"
+            )
+
+            return redirect(
+                url_for("admin.change_password")
+            )
+
+        socketio.emit(
+            "password_updated",
+            {
+                "user_id": user.id,
+                "message": (
+                    "Administrator password updated."
+                )
+            }
+        )
+
+        flash(
+            "Password updated successfully.",
+            "success"
+        )
+
+        return redirect(
+            url_for("admin.change_password")
+        )
+
+    return render_template(
+        "admin/change_password.html",
+        form=form
+    )
+
+@admin_blueprint.route(
+    "/change-email",
+    methods=["GET", "POST"]
+)
+@login_required(role="Administrator")
+def change_email():
+    form = ChangeEmailForm()
+
+    if request.method == "GET":
+        form.email.data = (
+            current_user.email
+        )
+
+    if form.validate_on_submit():
+        password = (
+            form.password.data or ""
+        )
+
+        if not check_password_hash(
+            current_user.password,
+            password
+        ):
+            flash(
+                "Password incorrect.",
+                "danger"
+            )
+
+            return redirect(
+                url_for(
+                    "admin.change_email"
+                )
+            )
+
+        new_email = (
+            form.email.data or ""
+        ).strip().lower()
+
+        existing = (
+            User.query
+            .filter(
+                func.lower(User.email)
+                == new_email,
+                User.id
+                != current_user.id
+            )
+            .first()
+        )
+
+        if existing:
+            flash(
+                "Email already exists.",
+                "danger"
+            )
+
+            return redirect(
+                url_for(
+                    "admin.change_email"
+                )
+            )
+
+        current_user.email = (
+            new_email
+        )
+
+        try:
+            db.session.commit()
+
+        except Exception:
+            db.session.rollback()
+
+            current_app.logger.exception(
+                "Administrator email update "
+                "failed for user_id=%s",
+                current_user.id
+            )
+
+            flash(
+                "Your email could not be updated.",
+                "danger"
+            )
+
+            return redirect(
+                url_for(
+                    "admin.change_email"
+                )
+            )
+
+        flash(
+            "Email updated.",
+            "success"
+        )
+
+        return redirect(
+            url_for(
+                "admin.my_profile"
+            )
+        )
+
+    return render_template(
+        "admin/change_email.html",
+        form=form
+    )
+
 
 
 # ============================================================
@@ -1633,22 +3050,82 @@ def mark_all_notifications_read():
 
 
 def find_previous_customer_message(ai_log):
-    if not ai_log:
+    """
+    Find the customer message that belongs to an AI response.
+
+    Matching order:
+    1. Same chat session
+    2. Same ticket
+    3. Same customer
+    """
+
+    if not ai_log or not ai_log.user_id:
         return ""
 
-    if not ai_log.user_id:
-        return ""
+    query = ChatMessage.query.filter(
+        ChatMessage.user_id == ai_log.user_id,
+        ChatMessage.role == "user",
+        ChatMessage.created_at <= ai_log.created_at
+    )
 
-    previous_user_log = (
-        ChatMessage.query
-        .filter(ChatMessage.user_id == ai_log.user_id)
-        .filter(ChatMessage.role == "user")
-        .filter(ChatMessage.created_at <= ai_log.created_at)
-        .order_by(desc(ChatMessage.created_at))
+    # Prefer a message from the same chat session.
+    if ai_log.session_id:
+        session_message = (
+            query
+            .filter(ChatMessage.session_id == ai_log.session_id)
+            .order_by(ChatMessage.created_at.desc())
+            .first()
+        )
+
+        if session_message:
+            return session_message.message or ""
+
+    # Otherwise, try the same support ticket.
+    if ai_log.ticket_id:
+        ticket_message = (
+            query
+            .filter(ChatMessage.ticket_id == ai_log.ticket_id)
+            .order_by(ChatMessage.created_at.desc())
+            .first()
+        )
+
+        if ticket_message:
+            return ticket_message.message or ""
+
+    # Final fallback: latest earlier message from the same customer.
+    previous_message = (
+        query
+        .order_by(ChatMessage.created_at.desc())
         .first()
     )
 
-    return previous_user_log.message if previous_user_log else ""
+    return previous_message.message if previous_message else ""
+
+def clean_ai_message(message):
+    """
+    Decode HTML entities stored in ChatMessage.message.
+
+    Example:
+    &lt;strong&gt;Answer&lt;/strong&gt;
+    becomes:
+    <strong>Answer</strong>
+    """
+
+    if not message:
+        return ""
+
+    cleaned = str(message)
+
+    # Some records may have been encoded more than once.
+    for _ in range(3):
+        decoded = html.unescape(cleaned)
+
+        if decoded == cleaned:
+            break
+
+        cleaned = decoded
+
+    return cleaned
 
 # ============================================================
 # CHATBOT REVIEW / HISTORY
@@ -1657,21 +3134,12 @@ def find_previous_customer_message(ai_log):
 @admin_blueprint.route("/ai/review-queue", methods=["GET"])
 @login_required(role="Administrator")
 def review_queue():
-    logs = (
-        ChatMessage.query
-        .filter(ChatMessage.role == "assistant")
-        .filter(ChatMessage.review_status == "Pending")
-        .order_by(desc(ChatMessage.created_at))
-        .all()
+    return redirect(
+        url_for(
+            "admin.ai_review_center",
+            tab="pending"
+        )
     )
-
-    return render_template(
-        "admin/review_queue.html",
-        logs=logs,
-        categories=Category.query.order_by(Category.category.asc()).all(),
-        find_previous_customer_message=find_previous_customer_message
-    )
-
 
 @admin_blueprint.route("/chat-history", methods=["GET"])
 @login_required(role="Administrator")
@@ -1999,7 +3467,10 @@ def download_agent_report_attachment(filename):
         as_attachment=True
     )
 
-@admin_blueprint.route("/faq/toggle/<int:id>")
+@admin_blueprint.route(
+    "/faq/toggle/<int:id>",
+    methods=["POST"]
+)
 @login_required(role="Administrator")
 def toggle_faq(id):
     faq = FAQ.query.get_or_404(id)
@@ -2054,7 +3525,19 @@ def delete_faq(id):
 @admin_blueprint.route("/chat-logs", methods=["GET"])
 @login_required(role="Administrator")
 def chat_logs():
-    return redirect(url_for("admin.review_queue"))
+    """
+    Legacy route retained for old links and notifications.
+
+    Instead of loading the old chat-log page, it now opens the
+    Pending Reviews tab in the unified AI Review Center.
+    """
+
+    return redirect(
+        url_for(
+            "admin.ai_review_center",
+            tab="pending"
+        )
+    )
 
 @admin_blueprint.route(
     "/chat-logs/review/<int:id>",
@@ -2062,7 +3545,6 @@ def chat_logs():
 )
 @login_required(role="Administrator")
 def review_chat_log(id):
-
     log = ChatMessage.query.get_or_404(id)
 
     log.review_status = "Reviewed"
@@ -2070,6 +3552,7 @@ def review_chat_log(id):
     log.reviewed_at = datetime.datetime.utcnow()
 
     db.session.commit()
+
     emit_feature_update(
         "ai_training_updated",
         "AI training and review data was updated.",
@@ -2081,9 +3564,18 @@ def review_chat_log(id):
         "success"
     )
 
-    return redirect(url_for("admin.chat_logs"))
+    return redirect(
+        url_for(
+            "admin.ai_review_center",
+            tab="pending"
+        )
+    )
 
-@admin_blueprint.route("/chat-logs/approve/<int:id>", methods=["POST"])
+
+@admin_blueprint.route(
+    "/chat-logs/approve/<int:id>",
+    methods=["POST"]
+)
 @login_required(role="Administrator")
 def approve_chat_log(id):
     log = ChatMessage.query.get_or_404(id)
@@ -2093,17 +3585,30 @@ def approve_chat_log(id):
     log.reviewed_at = datetime.datetime.utcnow()
 
     db.session.commit()
+
     emit_feature_update(
         "ai_training_updated",
         "AI training and review data was updated.",
         receiver_roles=["Administrator"]
     )
 
-    flash("Chatbot response approved.", "success")
-    return redirect(url_for("admin.chat_logs"))
+    flash(
+        "AI support response approved.",
+        "success"
+    )
+
+    return redirect(
+        url_for(
+            "admin.ai_review_center",
+            tab="pending"
+        )
+    )
 
 
-@admin_blueprint.route("/chat-logs/reject/<int:id>", methods=["POST"])
+@admin_blueprint.route(
+    "/chat-logs/reject/<int:id>",
+    methods=["POST"]
+)
 @login_required(role="Administrator")
 def reject_chat_log(id):
     log = ChatMessage.query.get_or_404(id)
@@ -2113,62 +3618,110 @@ def reject_chat_log(id):
     log.reviewed_at = datetime.datetime.utcnow()
 
     db.session.commit()
+
     emit_feature_update(
         "ai_training_updated",
         "AI training and review data was updated.",
         receiver_roles=["Administrator"]
     )
 
-    flash("Chatbot response rejected.", "warning")
-    return redirect(url_for("admin.chat_logs"))
+    flash(
+        "AI support response rejected and moved to training cases.",
+        "warning"
+    )
 
-@admin_blueprint.route("/chat-logs/save-as-faq/<int:id>", methods=["POST"])
+    return redirect(
+        url_for(
+            "admin.ai_review_center",
+            tab="training",
+            type="rejected"
+        )
+    )
+
+
+@admin_blueprint.route(
+    "/chat-logs/save-as-faq/<int:id>",
+    methods=["POST"]
+)
 @login_required(role="Administrator")
 def save_chat_log_as_faq(id):
     log = ChatMessage.query.get_or_404(id)
 
     if log.role != "assistant":
-        flash("Only AI assistant responses can be saved as FAQ answers.", "warning")
-        return redirect(url_for("admin.chat_logs"))
+        flash(
+            "Only AI assistant responses can be saved as FAQ answers.",
+            "warning"
+        )
+
+        return redirect(
+            url_for(
+                "admin.ai_review_center",
+                tab="pending"
+            )
+        )
 
     question = (
-        request.form.get("question") or
-        find_previous_customer_message(log) or
-        "Customer question"
+        request.form.get("question")
+        or find_previous_customer_message(log)
+        or "Customer question"
     ).strip()
 
     answer = (
-        request.form.get("answer") or
-        log.message or
-        ""
+        request.form.get("answer")
+        or log.message
+        or ""
     ).strip()
 
-    category_id = request.form.get("category_id", type=int)
+    category_id = request.form.get(
+        "category_id",
+        type=int
+    )
 
     tags = (
-        request.form.get("tags") or
-        "ai-generated, chatbot-log"
+        request.form.get("tags")
+        or "ai-reviewed,it-support"
     ).strip()
 
     if not question or not answer:
-        flash("Question and answer are required to create FAQ.", "warning")
-        return redirect(url_for("admin.chat_logs"))
+        flash(
+            "Question and answer are required to create an FAQ.",
+            "warning"
+        )
+
+        return redirect(
+            url_for(
+                "admin.ai_review_center",
+                tab="pending"
+            )
+        )
 
     existing_faq = FAQ.query.filter(
         FAQ.question.ilike(question)
     ).first()
 
     if existing_faq:
-        flash("A FAQ with the same question already exists.", "warning")
-        return redirect(url_for("admin.chat_logs"))
+        flash(
+            "An FAQ with the same question already exists.",
+            "warning"
+        )
+
+        return redirect(
+            url_for(
+                "admin.ai_review_center",
+                tab="pending"
+            )
+        )
 
     if not category_id:
         default_category = Category.query.first()
 
         if not default_category:
-            default_category = Category(category="Help and support")
+            default_category = Category(
+                category="Help and support"
+            )
+
             db.session.add(default_category)
-            db.session.commit()
+            db.session.flush()
 
         category_id = default_category.id
 
@@ -2187,6 +3740,7 @@ def save_chat_log_as_faq(id):
     log.reviewed_at = datetime.datetime.utcnow()
 
     db.session.commit()
+
     emit_feature_update(
         "ai_training_updated",
         "AI training and review data was updated.",
@@ -2196,13 +3750,24 @@ def save_chat_log_as_faq(id):
     socketio.emit(
         "faq_library_updated",
         {
-            "message": "FAQ library updated from chatbot log"
+            "message": (
+                "IT support FAQ library updated "
+                "from an AI review."
+            )
         }
     )
 
-    flash("AI response saved as FAQ successfully.", "primary")
-    return redirect(url_for("admin.chat_logs"))
+    flash(
+        "AI response saved as an IT support FAQ successfully.",
+        "success"
+    )
 
+    return redirect(
+        url_for(
+            "admin.ai_review_center",
+            tab="pending"
+        )
+    )
 
 
 # ============================================================
@@ -2285,7 +3850,11 @@ def analytics():
     active_count = (
         Ticket.query
         .join(Status)
-        .filter(Status.status != "Closed")
+        .filter(
+            func.lower(Status.status).notin_(
+                ["closed", "solved"]
+            )
+        )
         .count()
     )
 
@@ -2460,44 +4029,111 @@ def analytics():
     )
 
 
-@admin_blueprint.route("/agent-performance", methods=["GET"])
+@admin_blueprint.route(
+    "/agent-performance",
+    methods=["GET"]
+)
 @login_required(role="Administrator")
 def agent_performance():
-    agents = User.query.filter_by(role="Agent").all()
+    agents = (
+        User.query
+        .filter_by(role="Agent")
+        .order_by(User.name.asc())
+        .all()
+    )
+
+    open_id = get_open_status_id()
+    pending_id = get_pending_status_id()
+    solved_id = get_solved_status_id()
+    closed_id = get_closed_status_id()
+    escalated_id = get_status_id(
+        "Escalated",
+        None
+    )
+
     performance = []
 
     for agent in agents:
-        assigned = Ticket.query.filter_by(owner_id=agent.id).count()
-        open_count = Ticket.query.filter_by(owner_id=agent.id, status_id=1).count()
-        solved_count = Ticket.query.filter_by(owner_id=agent.id, status_id=2).count()
-        pending_count = Ticket.query.filter_by(owner_id=agent.id, status_id=3).count()
-        closed_count = Ticket.query.filter_by(owner_id=agent.id, status_id=4).count()
-
-        escalated_count = (
-            Ticket.query
-            .join(Status)
-            .filter(
-                Ticket.owner_id == agent.id,
-                Status.status == "Escalated"
-            )
-            .count()
+        base_query = Ticket.query.filter(
+            Ticket.owner_id == agent.id
         )
 
-        closed_tickets = Ticket.query.filter_by(
-            owner_id=agent.id,
-            status_id=4
-        ).all()
+        assigned = base_query.count()
+
+        open_count = (
+            base_query.filter(
+                Ticket.status_id == open_id
+            ).count()
+            if open_id
+            else 0
+        )
+
+        pending_count = (
+            base_query.filter(
+                Ticket.status_id == pending_id
+            ).count()
+            if pending_id
+            else 0
+        )
+
+        solved_count = (
+            base_query.filter(
+                Ticket.status_id == solved_id
+            ).count()
+            if solved_id
+            else 0
+        )
+
+        closed_count = (
+            base_query.filter(
+                Ticket.status_id == closed_id
+            ).count()
+            if closed_id
+            else 0
+        )
+
+        escalated_count = (
+            base_query.filter(
+                Ticket.status_id
+                == escalated_id
+            ).count()
+            if escalated_id
+            else 0
+        )
+
+        closed_tickets = (
+            base_query.filter(
+                Ticket.status_id == closed_id
+            ).all()
+            if closed_id
+            else []
+        )
+
+        resolution_seconds = []
+
+        for ticket in closed_tickets:
+            if (
+                ticket.created_at
+                and ticket.updated_at
+            ):
+                resolution_seconds.append(
+                    (
+                        ticket.updated_at
+                        - ticket.created_at
+                    ).total_seconds()
+                )
 
         avg_hours = 0
 
-        if closed_tickets:
-            total_seconds = 0
-
-            for ticket in closed_tickets:
-                if ticket.updated_at and ticket.created_at:
-                    total_seconds += (ticket.updated_at - ticket.created_at).total_seconds()
-
-            avg_hours = round((total_seconds / len(closed_tickets)) / 3600, 1)
+        if resolution_seconds:
+            avg_hours = round(
+                (
+                    sum(resolution_seconds)
+                    / len(resolution_seconds)
+                )
+                / 3600,
+                1
+            )
 
         performance.append({
             "agent": agent,
@@ -2510,7 +4146,10 @@ def agent_performance():
             "avg_hours": avg_hours
         })
 
-    return render_template("admin/agent_performance.html", performance=performance)
+    return render_template(
+        "admin/agent_performance.html",
+        performance=performance
+    )
 
 @admin_blueprint.route("/security-events", methods=["GET"])
 @login_required(role="Administrator")
@@ -2822,24 +4461,92 @@ def admin_placeholder_page(title, message):
 # AI TRAINING CASES
 # ============================================================
 
-@admin_blueprint.route("/ai/training-cases", methods=["GET"])
+# ============================================================
+# UNIFIED AI REVIEW CENTER
+# ============================================================
+
+@admin_blueprint.route("/ai/review-center", methods=["GET"])
 @login_required(role="Administrator")
-def training_cases():
-    case_type = request.args.get("type", "all")
+def ai_review_center():
+    """
+    Unified AI review page.
 
-    query = ChatMessage.query.filter(ChatMessage.role == "assistant")
+    Tabs:
+    - Pending reviews
+    - Training cases
+    - Recurring issues
+    - Learning summary
+    """
 
-    if case_type == "failed":
-        query = query.filter(ChatMessage.resolution_status == "Not Solved")
+    active_tab = (
+        request.args.get("tab")
+        or "pending"
+    ).strip().lower()
 
-    elif case_type == "escalated":
-        query = query.filter(ChatMessage.escalated == True)
+    allowed_tabs = {
+        "pending",
+        "training",
+        "recurring",
+        "summary"
+    }
 
-    elif case_type == "rejected":
-        query = query.filter(ChatMessage.review_status == "Rejected")
+    if active_tab not in allowed_tabs:
+        active_tab = "pending"
+
+    training_type = (
+        request.args.get("type")
+        or "all"
+    ).strip().lower()
+
+    allowed_training_types = {
+        "all",
+        "failed",
+        "escalated",
+        "rejected"
+    }
+
+    if training_type not in allowed_training_types:
+        training_type = "all"
+
+    # ========================================================
+    # PENDING REVIEWS
+    # ========================================================
+
+    pending_logs = (
+        ChatMessage.query
+        .filter(
+            ChatMessage.role == "assistant",
+            ChatMessage.review_status == "Pending"
+        )
+        .order_by(ChatMessage.created_at.desc())
+        .all()
+    )
+
+    # ========================================================
+    # TRAINING CASES
+    # ========================================================
+
+    training_query = ChatMessage.query.filter(
+        ChatMessage.role == "assistant"
+    )
+
+    if training_type == "failed":
+        training_query = training_query.filter(
+            ChatMessage.resolution_status == "Not Solved"
+        )
+
+    elif training_type == "escalated":
+        training_query = training_query.filter(
+            ChatMessage.escalated == True
+        )
+
+    elif training_type == "rejected":
+        training_query = training_query.filter(
+            ChatMessage.review_status == "Rejected"
+        )
 
     else:
-        query = query.filter(
+        training_query = training_query.filter(
             or_(
                 ChatMessage.resolution_status == "Not Solved",
                 ChatMessage.escalated == True,
@@ -2847,84 +4554,224 @@ def training_cases():
             )
         )
 
-    logs = (
-        query
-        .order_by(desc(ChatMessage.created_at))
+    training_logs = (
+        training_query
+        .order_by(ChatMessage.created_at.desc())
         .all()
     )
 
-    failed_count = (
+    # ========================================================
+    # RECURRING CUSTOMER ISSUES
+    # ========================================================
+
+    recurring_issues = (
+        db.session.query(
+            ChatMessage.message,
+            func.count(ChatMessage.id).label("total")
+        )
+        .filter(
+            ChatMessage.role == "user",
+            ChatMessage.message.isnot(None),
+            ChatMessage.message != ""
+        )
+        .group_by(ChatMessage.message)
+        .having(func.count(ChatMessage.id) > 1)
+        .order_by(
+            func.count(ChatMessage.id).desc()
+        )
+        .all()
+    )
+
+    # ========================================================
+    # SUMMARY COUNTS
+    # ========================================================
+
+    pending_count = (
         ChatMessage.query
-        .filter(ChatMessage.role == "assistant")
-        .filter(ChatMessage.resolution_status == "Not Solved")
+        .filter(
+            ChatMessage.role == "assistant",
+            ChatMessage.review_status == "Pending"
+        )
         .count()
     )
 
-    escalated_count = (
+    approved_count = (
         ChatMessage.query
-        .filter(ChatMessage.role == "assistant")
-        .filter(ChatMessage.escalated == True)
+        .filter(
+            ChatMessage.role == "assistant",
+            ChatMessage.review_status == "Approved"
+        )
         .count()
     )
 
     rejected_count = (
         ChatMessage.query
-        .filter(ChatMessage.role == "assistant")
-        .filter(ChatMessage.review_status == "Rejected")
+        .filter(
+            ChatMessage.role == "assistant",
+            ChatMessage.review_status == "Rejected"
+        )
         .count()
     )
 
-    total_cases = failed_count + escalated_count + rejected_count
+    failed_count = (
+        ChatMessage.query
+        .filter(
+            ChatMessage.role == "assistant",
+            ChatMessage.resolution_status == "Not Solved"
+        )
+        .count()
+    )
+
+    solved_count = (
+        ChatMessage.query
+        .filter(
+            ChatMessage.role == "assistant",
+            ChatMessage.resolution_status == "Solved"
+        )
+        .count()
+    )
+
+    escalated_count = (
+        ChatMessage.query
+        .filter(
+            ChatMessage.role == "assistant",
+            ChatMessage.escalated == True
+        )
+        .count()
+    )
+
+    saved_faq_count = (
+        ChatMessage.query
+        .filter(
+            ChatMessage.role == "assistant",
+            ChatMessage.review_status == "Saved as FAQ"
+        )
+        .count()
+    )
+
+    training_case_count = (
+        ChatMessage.query
+        .filter(ChatMessage.role == "assistant")
+        .filter(
+            or_(
+                ChatMessage.resolution_status == "Not Solved",
+                ChatMessage.escalated == True,
+                ChatMessage.review_status == "Rejected"
+            )
+        )
+        .count()
+    )
+
+    total_resolved_outcomes = solved_count + failed_count
+
+    success_rate = 0
+
+    if total_resolved_outcomes > 0:
+        success_rate = round(
+            (solved_count / total_resolved_outcomes) * 100,
+            1
+        )
+
+    categories = (
+        Category.query
+        .order_by(Category.category.asc())
+        .all()
+    )
 
     return render_template(
-        "admin/training_cases.html",
-        logs=logs,
-        selected_type=case_type,
-        failed_count=failed_count,
-        escalated_count=escalated_count,
+        "admin/ai_review_center.html",
+
+        active_tab=active_tab,
+        training_type=training_type,
+
+        pending_logs=pending_logs,
+        training_logs=training_logs,
+        recurring_issues=recurring_issues,
+
+        pending_count=pending_count,
+        approved_count=approved_count,
         rejected_count=rejected_count,
-        total_cases=total_cases,
-        categories=Category.query.order_by(Category.category.asc()).all(),
-        find_previous_customer_message=find_previous_customer_message
+        failed_count=failed_count,
+        solved_count=solved_count,
+        escalated_count=escalated_count,
+        saved_faq_count=saved_faq_count,
+        training_case_count=training_case_count,
+        success_rate=success_rate,
+
+        categories=categories,
+
+        find_previous_customer_message=find_previous_customer_message,
+        clean_ai_message=clean_ai_message
+    )
+
+
+@admin_blueprint.route("/ai/training-cases", methods=["GET"])
+@login_required(role="Administrator")
+def training_cases():
+    """
+    Legacy route retained for old sidebar links, bookmarks,
+    notifications, and previously generated URLs.
+
+    The old type filter is preserved and passed to the unified
+    AI Review Center.
+    """
+
+    case_type = (
+        request.args.get("type")
+        or "all"
+    ).strip().lower()
+
+    allowed_types = {
+        "all",
+        "failed",
+        "escalated",
+        "rejected"
+    }
+
+    if case_type not in allowed_types:
+        case_type = "all"
+
+    return redirect(
+        url_for(
+            "admin.ai_review_center",
+            tab="training",
+            type=case_type
+        )
     )
 
 @admin_blueprint.route("/ai/repeated-questions", methods=["GET"])
 @login_required(role="Administrator")
 def repeated_questions():
-    repeated = (
-        db.session.query(
-            ChatMessage.message,
-            func.count(ChatMessage.id).label("count")
-        )
-        .filter(ChatMessage.role == "user")
-        .group_by(ChatMessage.message)
-        .having(func.count(ChatMessage.id) > 1)
-        .order_by(func.count(ChatMessage.id).desc())
-        .all()
-    )
+    """
+    Legacy route for the old Recurring IT Issues page.
 
-    return render_template(
-        "admin/repeated_questions.html",
-        repeated=repeated
+    Recurring issues now appear as a tab inside the unified
+    AI Review Center.
+    """
+
+    return redirect(
+        url_for(
+            "admin.ai_review_center",
+            tab="recurring"
+        )
     )
 
 
 @admin_blueprint.route("/ai/learning-dashboard", methods=["GET"])
 @login_required(role="Administrator")
 def ai_learning_dashboard():
-    pending_count = ChatMessage.query.filter_by(review_status="Pending").count()
-    rejected_count = ChatMessage.query.filter_by(review_status="Rejected").count()
-    failed_count = ChatMessage.query.filter_by(resolution_status="Not Solved").count()
-    escalated_count = ChatMessage.query.filter_by(escalated=True).count()
-    saved_faq_count = ChatMessage.query.filter_by(review_status="Saved as FAQ").count()
+    """
+    Legacy route for the old standalone AI learning dashboard.
 
-    return render_template(
-        "admin/ai_learning_dashboard.html",
-        pending_count=pending_count,
-        rejected_count=rejected_count,
-        failed_count=failed_count,
-        escalated_count=escalated_count,
-        saved_faq_count=saved_faq_count
+    Learning statistics are now displayed under the Learning
+    Summary tab of the unified AI Review Center.
+    """
+
+    return redirect(
+        url_for(
+            "admin.ai_review_center",
+            tab="summary"
+        )
     )
 
 # ---------------- KNOWLEDGE MANAGEMENT ----------------
@@ -3121,16 +4968,34 @@ def create_faq_from_suggestion():
     tags = (request.form.get("tags") or "faq-suggestion").strip()
 
     if not question or not answer:
-        flash("Question and answer are required.", "warning")
-        return redirect(url_for("admin.faq_suggestions"))
+        flash(
+            "Question and answer are required.",
+            "warning"
+        )
+
+        return redirect(
+            url_for(
+                "admin.ai_review_center",
+                tab="training"
+            )
+        )
 
     existing_faq = FAQ.query.filter(
         FAQ.question.ilike(question)
     ).first()
 
     if existing_faq:
-        flash("A FAQ with the same question already exists.", "warning")
-        return redirect(url_for("admin.faq_suggestions"))
+        flash(
+            "An FAQ with the same question already exists.",
+            "warning"
+        )
+
+        return redirect(
+            url_for(
+                "admin.ai_review_center",
+                tab="training"
+            )
+        )
 
     faq = FAQ(
         question=question,
@@ -3193,19 +5058,47 @@ def knowledge_analytics():
         .all()
     )
 
-    top_faqs = (
-        FAQ.query
-        .order_by(FAQ.view_count.desc())
-        .limit(10)
-        .all()
-    )
+    if hasattr(FAQ, "view_count"):
+        top_faqs = (
+            FAQ.query
+            .order_by(
+                FAQ.view_count.desc()
+            )
+            .limit(10)
+            .all()
+        )
+    else:
+        top_faqs = (
+            FAQ.query
+            .order_by(
+                FAQ.created_at.desc()
+            )
+            .limit(10)
+            .all()
+        )
+       
+    if hasattr(
+        KnowledgeArticle,
+        "view_count"
+    ):
+        top_articles = (
+            KnowledgeArticle.query
+            .order_by(
+                KnowledgeArticle.view_count.desc()
+            )
+            .limit(10)
+            .all()
+        )
+    else:
+        top_articles = (
+            KnowledgeArticle.query
+            .order_by(
+                KnowledgeArticle.created_at.desc()
+            )
+            .limit(10)
+            .all()
+        )
 
-    top_articles = (
-        KnowledgeArticle.query
-        .order_by(KnowledgeArticle.view_count.desc())
-        .limit(10)
-        .all()
-    )
     
 
 
@@ -3908,39 +5801,443 @@ def customer_satisfaction():
         recent_reviews=recent_reviews,
         top_rated_agents=top_rated_agents
     )
-# ============================================================
-# SOCKET ROOMS
-# ============================================================
 
-@socketio.on("join_notification_room")
-def join_notification_room(data):
+
+@admin_blueprint.route(
+    "/email-logs",
+    methods=["GET"]
+)
+@login_required(role="Administrator")
+def email_logs():
+    search = (
+        request.args.get("search")
+        or ""
+    ).strip()
+
+    selected_status = (
+        request.args.get("status")
+        or ""
+    ).strip()
+
+    selected_type = (
+        request.args.get("email_type")
+        or ""
+    ).strip()
+
+    date_from = (
+        request.args.get("date_from")
+        or ""
+    ).strip()
+
+    date_to = (
+        request.args.get("date_to")
+        or ""
+    ).strip()
+
+    page = request.args.get(
+        "page",
+        default=1,
+        type=int
+    )
+
+    per_page = request.args.get(
+        "per_page",
+        default=20,
+        type=int
+    )
+
+    allowed_page_sizes = [
+        10,
+        20,
+        50,
+        100
+    ]
+
+    if per_page not in allowed_page_sizes:
+        per_page = 20
+
+    query = EmailLog.query
+
+    # ========================================================
+    # SEARCH
+    # ========================================================
+
+    if search:
+        search_pattern = (
+            f"%{search}%"
+        )
+
+        query = query.filter(
+            or_(
+                EmailLog.recipient.ilike(
+                    search_pattern
+                ),
+                EmailLog.subject.ilike(
+                    search_pattern
+                ),
+                EmailLog.email_type.ilike(
+                    search_pattern
+                ),
+                EmailLog.error_message.ilike(
+                    search_pattern
+                )
+            )
+        )
+
+    # ========================================================
+    # STATUS FILTER
+    # ========================================================
+
+    if selected_status in [
+        "Pending",
+        "Sent",
+        "Failed"
+    ]:
+        query = query.filter(
+            EmailLog.status
+            == selected_status
+        )
+
+    # ========================================================
+    # EMAIL-TYPE FILTER
+    # ========================================================
+
+    if selected_type:
+        query = query.filter(
+            EmailLog.email_type
+            == selected_type
+        )
+
+    # ========================================================
+    # DATE FILTERS
+    # ========================================================
+
+    if date_from:
+        try:
+            start_date = (
+                datetime.datetime.strptime(
+                    date_from,
+                    "%Y-%m-%d"
+                )
+            )
+
+            query = query.filter(
+                EmailLog.created_at
+                >= start_date
+            )
+
+        except ValueError:
+            flash(
+                "The From date is invalid.",
+                "warning"
+            )
+
+    if date_to:
+        try:
+            end_date = (
+                datetime.datetime.strptime(
+                    date_to,
+                    "%Y-%m-%d"
+                )
+                + datetime.timedelta(
+                    days=1
+                )
+            )
+
+            query = query.filter(
+                EmailLog.created_at
+                < end_date
+            )
+
+        except ValueError:
+            flash(
+                "The To date is invalid.",
+                "warning"
+            )
+
+    # ========================================================
+    # PAGINATION
+    # ========================================================
+
+    pagination = (
+        query
+        .order_by(
+            EmailLog.created_at.desc(),
+            EmailLog.id.desc()
+        )
+        .paginate(
+            page=page,
+            per_page=per_page,
+            error_out=False
+        )
+    )
+
+    logs = pagination.items
+
+    # ========================================================
+    # OVERALL STATISTICS
+    # These counts are not affected by filters.
+    # ========================================================
+
+    total = (
+        EmailLog.query.count()
+    )
+
+    sent = (
+        EmailLog.query
+        .filter(
+            EmailLog.status == "Sent"
+        )
+        .count()
+    )
+
+    failed = (
+        EmailLog.query
+        .filter(
+            EmailLog.status == "Failed"
+        )
+        .count()
+    )
+
+    pending = (
+        EmailLog.query
+        .filter(
+            EmailLog.status == "Pending"
+        )
+        .count()
+    )
+
+    email_types = [
+        row[0]
+        for row in (
+            db.session.query(
+                EmailLog.email_type
+            )
+            .filter(
+                EmailLog.email_type.isnot(
+                    None
+                )
+            )
+            .distinct()
+            .order_by(
+                EmailLog.email_type.asc()
+            )
+            .all()
+        )
+        if row[0]
+    ]
+
+    return render_template(
+        "admin/email_logs.html",
+        logs=logs,
+        pagination=pagination,
+        total=total,
+        sent=sent,
+        failed=failed,
+        pending=pending,
+        email_types=email_types,
+        search=search,
+        selected_status=selected_status,
+        selected_type=selected_type,
+        date_from=date_from,
+        date_to=date_to,
+        per_page=per_page
+    )
+
+
+@admin_blueprint.route(
+    "/email-logs/delete/<int:log_id>",
+    methods=["POST"]
+)
+@login_required(role="Administrator")
+def delete_email_log(log_id):
+    email_log = (
+        EmailLog.query.get_or_404(
+            log_id
+        )
+    )
+
     try:
-        user_id = str(data.get("user_id"))
+        db.session.delete(
+            email_log
+        )
 
-        if not user_id:
-            return
+        db.session.commit()
 
-        room = f"user_{user_id}"
-        join_room(room)
+    except Exception:
+        db.session.rollback()
 
-        print(f"✅ Admin joined notification room: {room}")
+        current_app.logger.exception(
+            "Email log deletion failed "
+            "for log_id=%s",
+            log_id
+        )
 
-    except Exception as e:
-        print("NOTIFICATION ROOM ERROR:", e)
+        flash(
+            "The email log could not be deleted.",
+            "danger"
+        )
 
+        return redirect(
+            url_for(
+                "admin.email_logs"
+            )
+        )
 
-@socketio.on("join_ticket_room")
-def join_ticket_room(data):
+    flash(
+        "Email log deleted successfully.",
+        "success"
+    )
+
+    return redirect(
+        request.referrer
+        or url_for(
+            "admin.email_logs"
+        )
+    )
+
+@admin_blueprint.route(
+    "/email-logs/delete-failed",
+    methods=["POST"]
+)
+@login_required(role="Administrator")
+def delete_failed_email_logs():
     try:
-        ticket_id = str(data.get("ticket_id"))
+        deleted_count = (
+            EmailLog.query
+            .filter(
+                EmailLog.status
+                == "Failed"
+            )
+            .delete(
+                synchronize_session=False
+            )
+        )
 
-        if not ticket_id:
-            return
+        db.session.commit()
 
-        room = f"ticket_{ticket_id}"
-        join_room(room)
+    except Exception:
+        db.session.rollback()
 
-        print(f"✅ Admin joined ticket room: {room}")
+        current_app.logger.exception(
+            "Failed email-log cleanup failed."
+        )
 
-    except Exception as e:
-        print("TICKET ROOM ERROR:", e)
+        flash(
+            "Failed email logs could not be deleted.",
+            "danger"
+        )
+
+        return redirect(
+            url_for(
+                "admin.email_logs"
+            )
+        )
+
+    if deleted_count:
+        flash(
+            f"{deleted_count} failed email "
+            "log(s) deleted successfully.",
+            "success"
+        )
+    else:
+        flash(
+            "There were no failed email logs to delete.",
+            "info"
+        )
+
+    return redirect(
+        url_for(
+            "admin.email_logs"
+        )
+    )
+
+@admin_blueprint.route(
+    "/email-logs/delete-all",
+    methods=["POST"]
+)
+@login_required(role="Administrator")
+def delete_all_email_logs():
+    confirmation = (
+        request.form.get(
+            "confirmation"
+        )
+        or ""
+    ).strip()
+
+    if confirmation != "DELETE":
+        flash(
+            "Type DELETE to confirm clearing all email logs.",
+            "warning"
+        )
+
+        return redirect(
+            url_for(
+                "admin.email_logs"
+            )
+        )
+
+    try:
+        deleted_count = (
+            EmailLog.query.delete(
+                synchronize_session=False
+            )
+        )
+
+        db.session.commit()
+
+    except Exception:
+        db.session.rollback()
+
+        current_app.logger.exception(
+            "Complete email-log cleanup failed."
+        )
+
+        flash(
+            "Email logs could not be cleared.",
+            "danger"
+        )
+
+        return redirect(
+            url_for(
+                "admin.email_logs"
+            )
+        )
+
+    flash(
+        f"{deleted_count} email log(s) cleared.",
+        "success"
+    )
+
+    return redirect(
+        url_for(
+            "admin.email_logs"
+        )
+    )
+    
+
+
+@admin_blueprint.route("/test-email", methods=["GET"])
+@login_required(role="Administrator")
+def test_email():
+    from app.services.email_service import send_email
+
+    email_sent = send_email(
+        recipient=current_user.email,
+        subject="SMTP Service Test",
+        email_type="smtp_test",
+        text_body=(
+            f"Hello {current_user.name},\n\n"
+            "The chatbot SMTP email service is working correctly.\n\n"
+            "This message was sent from the administrator test route."
+        ),
+        user_id=current_user.id
+    )
+
+    if email_sent:
+        return "Email sent successfully.", 200
+
+    return (
+        "Email could not be sent. Check the terminal and email_logs table.",
+        500
+    )

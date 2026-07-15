@@ -1,0 +1,17 @@
+Hello {{ user.name }}
+
+Your support ticket has been reassigned.
+
+Ticket Number:
+{{ ticket.number }}
+
+Subject:
+{{ ticket.subject }}
+
+View Ticket:
+
+{{ url_for(
+'customer.view_ticket',
+id=ticket.id,
+_external=True
+) }}

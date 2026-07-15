@@ -1,0 +1,346 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block style %}
+{{ super() }}
+
+<style>
+    .chat-status-pill {
+        display: inline-block;
+        padding: 5px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 600;
+        background: #e5e7eb;
+        color: #111827;
+    }
+
+    .chat-status-active {
+        background: #dcfce7;
+        color: #166534;
+    }
+
+    .chat-status-solved {
+        background: #dbeafe;
+        color: #1e40af;
+    }
+
+    .chat-status-ai-answered {
+        background: #ede9fe;
+        color: #5b21b6;
+    }
+
+    .timeline-item {
+        border-left: 3px solid #e5e7eb;
+        padding-left: 14px;
+        margin-bottom: 18px;
+    }
+
+    .timeline-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 6px;
+    }
+
+    .timeline-author {
+        font-weight: 700;
+        color: #111827;
+    }
+
+    .timeline-role {
+        font-size: 12px;
+        color: #6b7280;
+    }
+
+    .timeline-time {
+        font-size: 12px;
+        color: #6b7280;
+        white-space: nowrap;
+    }
+
+    .timeline-body {
+        background: #f8fafc;
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        padding: 10px 12px;
+    }
+</style>
+{% endblock %}
+
+{% block header %}
+    {% block title %}AI Conversation{% endblock %}
+{% endblock %}
+
+{% block text %}
+    Review your complete AI conversation, triage answers, and resolution history.
+{% endblock %}
+
+{% block button %}
+<button type="button"
+        class="btn btn-danger btn-sm"
+        data-toggle="modal"
+        data-target="#deleteChatModal">
+    Delete Chat
+</button>
+{% endblock %}
+
+{% block content %}
+
+<div class="max-w-1000">
+    {% include 'includes/alert.html' %}
+</div>
+
+<div class="content-box mb-3 content-lighten max-w-1000">
+
+    <h5 class="mb-3">Chat Summary</h5>
+
+    <table class="table table-striped table-borderless">
+        <tbody>
+
+            <tr>
+                <td class="w-25">Chat ID</td>
+                <td>CHAT-{{ chat_session.id }}</td>
+            </tr>
+
+            <tr>
+                <td>Title</td>
+                <td>{{ chat_session.title or 'IT Support Chat' }}</td>
+            </tr>
+
+            <tr>
+                <td>Issue Type</td>
+                <td>{{ chat_session.issue_type or '-' }}</td>
+            </tr>
+
+            <tr>
+                <td>Status</td>
+                <td>
+                    {% set status_name = chat_session.status or 'Active' %}
+                    <span class="chat-status-pill chat-status-{{ status_name|lower|replace(' ', '-') }}">
+                        {{ status_name }}
+                    </span>
+                </td>
+            </tr>
+
+            <tr>
+                <td>Date Created</td>
+                <td>
+                    {{ chat_session.created_at.strftime('%d %b %Y, %H:%M %p') if chat_session.created_at else '' }}
+                </td>
+            </tr>
+
+            <tr>
+                <td>Last Updated</td>
+                <td>
+                    {{ chat_session.updated_at.strftime('%d %b %Y, %H:%M %p') if chat_session.updated_at else '' }}
+                </td>
+            </tr>
+
+            {% if chat_session.triage_summary %}
+            <tr>
+                <td>Triage Summary</td>
+                <td>
+                    <div class="fr-view">
+                        {{ chat_session.triage_summary|safe }}
+                    </div>
+                </td>
+            </tr>
+            {% endif %}
+
+        </tbody>
+    </table>
+
+</div>
+
+<div class="content-box mb-3 content-lighten max-w-1000">
+
+    <h5 class="mb-3">
+        Customer Satisfaction Rating
+    </h5>
+
+    {% if existing_rating %}
+
+    <div class="alert alert-success">
+        <strong>Your rating:</strong>
+        {{ existing_rating.rating }} / 5
+
+        {% if existing_rating.feedback %}
+        <br>
+        <strong>Feedback:</strong>
+        {{ existing_rating.feedback }}
+        {% endif %}
+    </div>
+
+    <p class="text-muted mb-3">
+        You can update your rating below if your opinion has changed.
+    </p>
+
+    {% else %}
+
+    <p class="text-muted">
+        Please rate your AI support chat experience.
+    </p>
+
+    {% endif %}
+
+    <form action="{{ url_for('customer.rate_chat', session_id=chat_session.id) }}"
+          method="POST">
+
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div class="form-group">
+
+            <label>Rating</label>
+
+            <select name="rating" class="form-control" required>
+
+                <option value="">Select rating</option>
+
+                <option value="5" {% if existing_rating and existing_rating.rating==5 %}selected{% endif %}>
+                    5 - Excellent
+                </option>
+
+                <option value="4" {% if existing_rating and existing_rating.rating==4 %}selected{% endif %}>
+                    4 - Good
+                </option>
+
+                <option value="3" {% if existing_rating and existing_rating.rating==3 %}selected{% endif %}>
+                    3 - Average
+                </option>
+
+                <option value="2" {% if existing_rating and existing_rating.rating==2 %}selected{% endif %}>
+                    2 - Poor
+                </option>
+
+                <option value="1" {% if existing_rating and existing_rating.rating==1 %}selected{% endif %}>
+                    1 - Very Poor
+                </option>
+
+            </select>
+
+        </div>
+
+        <div class="form-group">
+
+            <label>Feedback Optional</label>
+
+            <textarea name="feedback"
+                      class="form-control"
+                      rows="4"
+                      placeholder="Tell us about your AI support experience...">{% if existing_rating %}{{ existing_rating.feedback or '' }}{% endif %}</textarea>
+
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-sm">
+            Submit Rating
+        </button>
+
+    </form>
+
+</div>
+
+<div class="content-box mb-3 content-lighten max-w-1000">
+
+    <h5 class="mb-3">Conversation History</h5>
+
+    {% if messages %}
+
+    {% for msg in messages %}
+    <div class="timeline-item">
+
+        <div class="timeline-header">
+            <div>
+                <span class="timeline-author">
+                    {% if msg.role == 'user' %}
+                    You
+                    {% elif msg.role == 'assistant' %}
+                    AI Assistant
+                    {% else %}
+                    System
+                    {% endif %}
+                </span>
+
+                <span class="timeline-role">
+                    {{ msg.role|title }}
+                </span>
+            </div>
+
+            <div class="timeline-time">
+                {{ msg.created_at.strftime('%d %b %Y, %H:%M %p') if msg.created_at else '' }}
+            </div>
+        </div>
+
+        <div class="timeline-body fr-view">
+            {{ msg.message|safe }}
+        </div>
+
+    </div>
+    {% endfor %}
+
+    {% else %}
+
+    <p class="text-muted mb-0">
+        No conversation history found.
+    </p>
+
+    {% endif %}
+
+</div>
+
+<div class="modal fade"
+     id="deleteChatModal"
+     tabindex="-1"
+     role="dialog"
+     aria-labelledby="deleteChatModalLabel"
+     aria-hidden="true">
+
+    <div class="modal-dialog modal-dialog-centered" role="document">
+
+        <div class="modal-content">
+
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteChatModalLabel">
+                    Delete Chat Confirmation
+                </h5>
+
+                <button type="button"
+                        class="close"
+                        data-dismiss="modal"
+                        aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+
+            <div class="modal-body">
+                <p>
+                    Are you sure you want to delete this AI chat?
+                    This action cannot be undone.
+                </p>
+            </div>
+
+            <div class="modal-footer">
+
+                <button type="button"
+                        class="btn btn-secondary"
+                        data-dismiss="modal">
+                    Close
+                </button>
+
+                <form action="{{ url_for('customer.delete_chat_session_page', session_id=chat_session.id) }}"
+                      method="POST">
+
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                    <input type="submit" class="btn btn-danger" value="Delete Chat">
+
+                </form>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endblock %}

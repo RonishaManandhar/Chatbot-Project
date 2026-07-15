@@ -1,0 +1,286 @@
+{% extends "layouts/dashboard.base.html" %}
+
+{% block style %}
+{{ super() }}
+
+<style>
+    .email-preferences-container {
+        max-width: 900px;
+    }
+
+    .email-preference-card {
+        border: 0;
+        border-radius: 12px;
+        overflow: hidden;
+    }
+
+    .email-preference-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        padding: 18px 0;
+    }
+
+    .email-preference-text {
+        flex: 1;
+        min-width: 0;
+    }
+
+        .email-preference-text strong {
+            display: block;
+            margin-bottom: 5px;
+            color: #111827;
+        }
+
+        .email-preference-text p {
+            margin-bottom: 0;
+            line-height: 1.55;
+        }
+
+    .email-preference-switch {
+        flex: 0 0 auto;
+        min-width: 52px;
+    }
+
+    .mandatory-email-box {
+        background: #f8fafc;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 12px 14px;
+        margin-top: 12px;
+    }
+
+    .preference-divider {
+        margin: 0;
+        border-color: #e5e7eb;
+    }
+
+    @media (max-width: 576px) {
+        .email-preference-row {
+            align-items: flex-start;
+            gap: 15px;
+        }
+    }
+</style>
+{% endblock %}
+
+
+{% block header %}
+{% block title %}
+Email Preferences
+{% endblock %}
+{% endblock %}
+
+
+{% block text %}
+Choose which optional email notifications you would like to receive.
+{% endblock %}
+
+
+{% block content %}
+
+<div class="email-preferences-container">
+
+    {% include "includes/alert.html" %}
+
+    <div class="content-box content-lighten email-preference-card">
+
+        <div class="mb-4">
+            <h5 class="mb-1">
+                Email Notification Settings
+            </h5>
+
+            <p class="text-muted mb-0">
+                Manage ticket notifications, satisfaction requests,
+                and optional service announcements.
+            </p>
+        </div>
+
+        <form method="POST"
+              action="{{ url_for('customer.email_preferences') }}">
+
+            <input type="hidden"
+                   name="csrf_token"
+                   value="{{ csrf_token() }}">
+
+            <!-- ================================================= -->
+            <!-- SECURITY EMAILS -->
+            <!-- ================================================= -->
+
+            <div class="email-preference-row">
+
+                <div class="email-preference-text">
+                    <strong>
+                        Account and security emails
+                    </strong>
+
+                    <p class="text-muted">
+                        Email verification, login verification codes,
+                        password-reset links, and password-change
+                        confirmations.
+                    </p>
+
+                    <div class="mandatory-email-box">
+                        <i class="fa fa-lock mr-1"></i>
+                        Security emails are required and cannot be disabled.
+                    </div>
+                </div>
+
+                <div class="email-preference-switch">
+
+                    <div class="custom-control custom-switch">
+                        <input type="checkbox"
+                               class="custom-control-input"
+                               id="securityEmails"
+                               checked
+                               disabled>
+
+                        <label class="custom-control-label"
+                               for="securityEmails">
+                        </label>
+                    </div>
+
+                </div>
+
+            </div>
+
+            <hr class="preference-divider">
+
+            <!-- ================================================= -->
+            <!-- TICKET UPDATES -->
+            <!-- ================================================= -->
+
+            <div class="email-preference-row">
+
+                <div class="email-preference-text">
+                    <strong>
+                        Ticket updates
+                    </strong>
+
+                    <p class="text-muted">
+                        Receive emails when your support ticket is
+                        created, assigned, replied to, escalated,
+                        closed, reopened, or deleted.
+                    </p>
+                </div>
+
+                <div class="email-preference-switch">
+
+                    <div class="custom-control custom-switch">
+                        <input type="checkbox"
+                               class="custom-control-input"
+                               name="ticket_updates"
+                               id="ticketUpdates"
+                               {% if preference.ticket_updates %}
+                               checked
+                               {% endif %}>
+
+                        <label class="custom-control-label"
+                               for="ticketUpdates">
+                        </label>
+                    </div>
+
+                </div>
+
+            </div>
+
+            <hr class="preference-divider">
+
+            <!-- ================================================= -->
+            <!-- SATISFACTION EMAILS -->
+            <!-- ================================================= -->
+
+            <div class="email-preference-row">
+
+                <div class="email-preference-text">
+                    <strong>
+                        Satisfaction emails
+                    </strong>
+
+                    <p class="text-muted">
+                        Receive an email asking you to rate your
+                        support experience after a ticket has been
+                        resolved or closed.
+                    </p>
+                </div>
+
+                <div class="email-preference-switch">
+
+                    <div class="custom-control custom-switch">
+                        <input type="checkbox"
+                               class="custom-control-input"
+                               name="satisfaction_emails"
+                               id="satisfactionEmails"
+                               {% if preference.satisfaction_emails %}
+                               checked
+                               {% endif %}>
+
+                        <label class="custom-control-label"
+                               for="satisfactionEmails">
+                        </label>
+                    </div>
+
+                </div>
+
+            </div>
+
+            <hr class="preference-divider">
+
+            <!-- ================================================= -->
+            <!-- MARKETING EMAILS -->
+            <!-- ================================================= -->
+
+            <div class="email-preference-row">
+
+                <div class="email-preference-text">
+                    <strong>
+                        Marketing and announcements
+                    </strong>
+
+                    <p class="text-muted">
+                        Receive optional service announcements,
+                        new-feature information, and promotional
+                        messages.
+                    </p>
+                </div>
+
+                <div class="email-preference-switch">
+
+                    <div class="custom-control custom-switch">
+                        <input type="checkbox"
+                               class="custom-control-input"
+                               name="marketing_emails"
+                               id="marketingEmails"
+                               {% if preference.marketing_emails %}
+                               checked
+                               {% endif %}>
+
+                        <label class="custom-control-label"
+                               for="marketingEmails">
+                        </label>
+                    </div>
+
+                </div>
+
+            </div>
+
+            <div class="mt-4">
+
+                <button type="submit"
+                        class="btn btn-primary">
+
+                    <i class="fa fa-save mr-1"></i>
+                    Save Email Preferences
+
+                </button>
+
+            </div>
+
+        </form>
+
+    </div>
+
+</div>
+
+{% endblock %}

@@ -1,9 +1,22 @@
-﻿from app.admin.views import log_system_event
-from flask import Blueprint, current_app, render_template as _render, send_file, redirect, request, url_for, flash, jsonify
+﻿from app.utils.system_events import (
+    log_system_event
+)
+from flask import Blueprint, current_app, render_template as _render, send_file, redirect, request, url_for, flash, jsonify, abort
 from flask_login import current_user
 from flask_socketio import join_room
-
+from app.services.email_service import (
+    send_ticket_reply_email,
+    send_ticket_created_email,
+    send_ticket_closed_email,
+    send_satisfaction_email,
+    send_ticket_assigned_email,
+    send_ticket_reassigned_email,
+    send_ticket_escalated_email,
+    send_ticket_reopened_email,
+    send_ticket_deleted_email
+)
 from app.agent.forms import (
+    ChangeEmailForm,
     TicketForm,
     UpdateTicketForm,
     CommentForm,
@@ -19,7 +32,10 @@ from app.exts import db, csrf
 from app.socketio_ext import socketio
 
 from werkzeug.utils import secure_filename
-from werkzeug.security import generate_password_hash
+from werkzeug.security import (
+    generate_password_hash,
+    check_password_hash
+)
 
 from sqlalchemy import desc, or_, func
 
@@ -41,17 +57,23 @@ REPORT_UPLOAD_FOLDER = os.path.join(
 # TEMPLATE HELPER
 # ============================================================
 
-def get_agent_ticket_or_404(ticket_id, allow_unassigned=False):
-    query = Ticket.query.filter(Ticket.id == ticket_id)
+def get_agent_ticket_or_404(
+    ticket_id,
+    allow_unassigned=False
+):
+    query = Ticket.query.filter(
+        Ticket.id == ticket_id
+    )
 
     if allow_unassigned:
         query = query.filter(
             or_(
                 Ticket.owner_id == current_user.id,
-                Ticket.owner_id == None,
+                Ticket.owner_id.is_(None),
                 Ticket.author_id == current_user.id
             )
         )
+
     else:
         query = query.filter(
             or_(
@@ -61,7 +83,6 @@ def get_agent_ticket_or_404(ticket_id, allow_unassigned=False):
         )
 
     return query.first_or_404()
-
 
 def render_template(*args, **kwargs):
     notifications = (
@@ -103,23 +124,59 @@ def render_template(*args, **kwargs):
     if current_user.is_authenticated and current_user.role == "Agent":
 
         closed_id = get_closed_status_id()
+        solved_id = get_solved_status_id()
 
+        inactive_status_ids = [
+            status_id
+            for status_id in [
+                closed_id,
+                solved_id
+            ]
+            if status_id is not None
+        ]
         # --------------------------------------------------------
         # SUPPORT DESK
         # --------------------------------------------------------
 
-        agent_new_ticket_count = (
+        new_ticket_query = (
             Ticket.query
-            .filter(Ticket.owner_id == None)
-            .filter(Ticket.status_id != closed_id)
-            .count()
+            .filter(Ticket.owner_id.is_(None))
         )
 
-        agent_assigned_ticket_count = (
+        if inactive_status_ids:
+            new_ticket_query = (
+                new_ticket_query
+                .filter(
+                    ~Ticket.status_id.in_(
+                        inactive_status_ids
+                    )
+                )
+            )
+
+        agent_new_ticket_count = (
+            new_ticket_query.count()
+        )
+
+        assigned_ticket_query = (
             Ticket.query
-            .filter(Ticket.owner_id == current_user.id)
-            .filter(Ticket.status_id != closed_id)
-            .count()
+            .filter(
+                Ticket.owner_id
+                == current_user.id
+            )
+        )
+
+        if inactive_status_ids:
+            assigned_ticket_query = (
+                assigned_ticket_query
+                .filter(
+                    ~Ticket.status_id.in_(
+                        inactive_status_ids
+                    )
+                )
+            )
+
+        agent_assigned_ticket_count = (
+            assigned_ticket_query.count()
         )
 
         agent_support_desk_total_count = (
@@ -303,12 +360,27 @@ def render_template(*args, **kwargs):
 # ============================================================
 
 def get_status_id(status_name, fallback=None):
-    status = Status.query.filter_by(status=status_name).first()
+    if not status_name:
+        return fallback
+
+    status = (
+        Status.query
+        .filter(
+            func.lower(Status.status)
+            == status_name.strip().lower()
+        )
+        .first()
+    )
+
     return status.id if status else fallback
 
 
 def get_open_status_id():
     return get_status_id("Open", 1)
+
+
+def get_solved_status_id():
+    return get_status_id("Solved", 2)
 
 
 def get_pending_status_id():
@@ -320,15 +392,56 @@ def get_closed_status_id():
 
 
 def get_escalated_status_id():
-    return get_status_id("Escalated", None)
+    return get_status_id("Escalated")
+
 
 def get_waiting_customer_status_id():
-    return get_status_id("Waiting For Customer", None)
+    return get_status_id("Waiting for Customer")
 
+def safe_send_email(email_function, *args, **kwargs):
+    try:
+        return bool(
+            email_function(
+                *args,
+                **kwargs
+            )
+        )
+
+    except Exception:
+        current_app.logger.exception(
+            "Email function failed: %s",
+            getattr(
+                email_function,
+                "__name__",
+                "unknown_email_function"
+            )
+        )
+
+        return False
+
+
+def safe_commit(error_message="Database operation failed."):
+    try:
+        db.session.commit()
+        return True
+
+    except Exception:
+        db.session.rollback()
+
+        current_app.logger.exception(
+            error_message
+        )
+
+        return False
 
 def auto_close_waiting_customer_tickets():
-    waiting_id = get_waiting_customer_status_id()
-    closed_id = get_closed_status_id()
+    waiting_id = (
+        get_waiting_customer_status_id()
+    )
+
+    closed_id = (
+        get_closed_status_id()
+    )
 
     if not waiting_id or not closed_id:
         return
@@ -337,86 +450,199 @@ def auto_close_waiting_customer_tickets():
 
     tickets = (
         Ticket.query
-        .filter(Ticket.status_id == waiting_id)
+        .filter(
+            Ticket.status_id == waiting_id
+        )
         .all()
     )
 
-    for ticket in tickets:
+    changed = False
 
-        if not ticket.waiting_customer_since:
-            ticket.waiting_customer_since = (
-                ticket.updated_at.replace(tzinfo=None)
-                if ticket.updated_at else now
+    for ticket in tickets:
+        waiting_since = (
+            ticket.waiting_customer_since
+        )
+
+        if not waiting_since:
+            waiting_since = (
+                ticket.updated_at
+                or ticket.created_at
+                or now
             )
 
+            ticket.waiting_customer_since = (
+                waiting_since
+            )
+
+            changed = True
+
+        waiting_since = (
+            waiting_since.replace(
+                tzinfo=None
+            )
+        )
+
         waiting_hours = (
-            now - ticket.waiting_customer_since.replace(tzinfo=None)
+            now - waiting_since
         ).total_seconds() / 3600
 
-        if waiting_hours >= 24 and not ticket.inactive_reminder_sent:
+        if (
+            waiting_hours >= 24
+            and not ticket.inactive_reminder_sent
+        ):
             notify_user(
-                message="Reminder: your support ticket is waiting for your reply and may close after 48 hours of no response.",
+                message=(
+                    "Reminder: your support ticket is waiting "
+                    "for your reply and may close after 48 hours "
+                    "of no response."
+                ),
                 receiver_id=ticket.author_id,
-                sender_id=ticket.owner_id or current_user.id,
+                sender_id=(
+                    ticket.owner_id
+                    or current_user.id
+                ),
                 ticket_id=ticket.id
             )
 
             reminder_comment = Comment(
-                comment="Reminder sent to customer: ticket is waiting for customer response.",
-                author_id=ticket.owner_id or current_user.id,
+                comment=(
+                    "Reminder sent to customer: ticket is "
+                    "waiting for customer response."
+                ),
+                author_id=(
+                    ticket.owner_id
+                    or current_user.id
+                ),
                 ticket_id=ticket.id
             )
 
-            db.session.add(reminder_comment)
+            db.session.add(
+                reminder_comment
+            )
+
             ticket.inactive_reminder_sent = True
+            changed = True
 
         if waiting_hours >= 48:
             ticket.status_id = closed_id
+            ticket.updated_at = now
 
             close_comment = Comment(
-                comment="Ticket automatically closed because the customer did not respond within 48 hours.",
-                author_id=ticket.owner_id or current_user.id,
+                comment=(
+                    "Ticket automatically closed because the "
+                    "customer did not respond within 48 hours."
+                ),
+                author_id=(
+                    ticket.owner_id
+                    or current_user.id
+                ),
                 ticket_id=ticket.id
             )
 
-            db.session.add(close_comment)
+            db.session.add(
+                close_comment
+            )
 
-    db.session.commit()
+            changed = True
+
+            if ticket.author:
+                safe_send_email(
+                    send_ticket_closed_email,
+                    ticket.author,
+                    ticket
+                )
+
+                safe_send_email(
+                    send_satisfaction_email,
+                    ticket.author,
+                    ticket
+                )
+
+            socketio.emit(
+                "customer_ticket_closed",
+                {
+                    "ticket_id": ticket.id,
+                    "message": (
+                        "Ticket automatically closed."
+                    )
+                },
+                room=f"user_{ticket.author_id}"
+            )
+
+            emit_ticket_event(
+                ticket,
+                "ticket_closed",
+                close_comment.comment
+            )
+
+    if changed:
+        safe_commit(
+            "Automatic ticket closure failed."
+        )
     
 
 def notify_unassigned_tickets():
     now = datetime.datetime.utcnow()
 
-    closed_id = get_closed_status_id()
+    inactive_status_ids = [
+        status_id
+        for status_id in [
+            get_closed_status_id(),
+            get_solved_status_id()
+        ]
+        if status_id is not None
+    ]
 
-    unassigned_tickets = (
-        Ticket.query
-        .filter(Ticket.owner_id == None)
-        .filter(Ticket.status_id != closed_id)
-        .all()
+    query = Ticket.query.filter(
+        Ticket.owner_id.is_(None)
     )
+
+    if inactive_status_ids:
+        query = query.filter(
+            ~Ticket.status_id.in_(
+                inactive_status_ids
+            )
+        )
+
+    unassigned_tickets = query.all()
+
+    changed = False
 
     for ticket in unassigned_tickets:
 
-        if not ticket.created_at:
+        # The unassigned waiting period starts from updated_at.
+        # When a ticket becomes unassigned, updated_at is reset.
+        unassigned_since = (
+            ticket.updated_at
+            or ticket.created_at
+        )
+
+        if not unassigned_since:
             continue
 
-        created_at = ticket.created_at.replace(tzinfo=None)
+        unassigned_since = (
+            unassigned_since.replace(
+                tzinfo=None
+            )
+        )
 
         waiting_minutes = (
-            now - created_at
+            now - unassigned_since
         ).total_seconds() / 60
 
         # =====================================================
-        # 15 MINUTE CUSTOMER WAITING NOTIFICATION
+        # 15-MINUTE CUSTOMER NOTIFICATION
         # =====================================================
 
-        if waiting_minutes >= 15 and not ticket.unassigned_15min_sent:
-
+        if (
+            waiting_minutes >= 15
+            and not ticket.unassigned_15min_sent
+        ):
             notify_user(
                 message=(
-                    "Your ticket is still waiting for an available support agent. "
-                    "Thank you for your patience."
+                    "Your ticket is still waiting for an "
+                    "available support agent. Thank you for "
+                    "your patience."
                 ),
                 receiver_id=ticket.author_id,
                 sender_id=ticket.author_id,
@@ -425,35 +651,48 @@ def notify_unassigned_tickets():
 
             reminder_comment = Comment(
                 comment=(
-                    "Customer wait-time reminder sent: ticket is still waiting "
-                    "for an available support agent."
+                    "Customer wait-time reminder sent: ticket "
+                    "is still waiting for an available support "
+                    "agent."
                 ),
                 author_id=ticket.author_id,
                 ticket_id=ticket.id
             )
 
-            db.session.add(reminder_comment)
+            db.session.add(
+                reminder_comment
+            )
 
             ticket.unassigned_15min_sent = True
+            changed = True
 
         # =====================================================
-        # 30 MINUTE STAFF ALERT
+        # 30-MINUTE STAFF ALERT
         # =====================================================
 
-        if waiting_minutes >= 30 and not ticket.unassigned_30min_sent:
-
+        if (
+            waiting_minutes >= 30
+            and not ticket.unassigned_30min_sent
+        ):
             staff_users = (
                 User.query
-                .filter(User.role.in_(["Agent", "Administrator"]))
+                .filter(
+                    User.role.in_(
+                        [
+                            "Agent",
+                            "Administrator"
+                        ]
+                    )
+                )
                 .all()
             )
 
             for staff in staff_users:
-
                 notify_user(
                     message=(
-                        f"Unassigned ticket #{ticket.number} has been waiting "
-                        "over 30 minutes."
+                        f"Unassigned ticket "
+                        f"#{ticket.number} has been "
+                        f"waiting over 30 minutes."
                     ),
                     receiver_id=staff.id,
                     sender_id=ticket.author_id,
@@ -462,18 +701,24 @@ def notify_unassigned_tickets():
 
             staff_comment = Comment(
                 comment=(
-                    "Staff alert sent: ticket has been unassigned for more "
-                    "than 30 minutes."
+                    "Staff alert sent: ticket has been "
+                    "unassigned for more than 30 minutes."
                 ),
                 author_id=ticket.author_id,
                 ticket_id=ticket.id
             )
 
-            db.session.add(staff_comment)
+            db.session.add(
+                staff_comment
+            )
 
             ticket.unassigned_30min_sent = True
+            changed = True
 
-    db.session.commit()
+    if changed:
+        safe_commit(
+            "Unassigned ticket notification update failed."
+        )
 
 
 def emit_global_refresh(reason="updated", ticket=None):
@@ -497,7 +742,15 @@ def emit_global_refresh(reason="updated", ticket=None):
     socketio.emit("analytics_updated", payload)
 
 
-def notify_user(message, receiver_id, sender_id, ticket_id):
+def notify_user(
+    message,
+    receiver_id,
+    sender_id=None,
+    ticket_id=None
+):
+    if not receiver_id:
+        return None
+
     try:
         return Notification.send_notification(
             message=message,
@@ -507,8 +760,15 @@ def notify_user(message, receiver_id, sender_id, ticket_id):
             notification_type="ticket",
             seen=False
         )
-    except Exception as e:
-        print("NOTIFICATION ERROR:", e)
+
+    except Exception:
+        current_app.logger.exception(
+            "Notification failed for receiver_id=%s "
+            "ticket_id=%s",
+            receiver_id,
+            ticket_id
+        )
+
         return None
 
 
@@ -611,24 +871,64 @@ def emit_agent_report_created(report):
     socketio.emit("analytics_updated", payload)
 
 
-def emit_comment(ticket, comment, is_attachment=False):
+def emit_comment(
+    ticket,
+    comment,
+    is_attachment=False
+):
+    user = comment.user
+
     payload = {
         "ticket_id": ticket.id,
         "ticket_number": ticket.number,
         "comment_id": comment.id,
-        "message": comment.comment,
-        "sender_name": comment.user.name,
-        "sender_role": comment.user.role,
+        "message": comment.comment or "",
+        "sender_name": (
+            user.name
+            if user
+            else "System"
+        ),
+        "sender_role": (
+            user.role
+            if user
+            else "System"
+        ),
         "author_id": comment.author_id,
         "is_attachment": is_attachment,
-        "created_at": comment.created_at.strftime("%d %b %Y, %H:%M %p") if comment.created_at else ""
+        "created_at": (
+            comment.created_at.strftime(
+                "%d %b %Y, %H:%M %p"
+            )
+            if comment.created_at
+            else ""
+        )
     }
 
-    socketio.emit("new_comment", payload, room=f"ticket_{ticket.id}")
-    socketio.emit("global_ticket_updated", payload)
-    socketio.emit("sidebar_counts_updated", payload)
-    socketio.emit("notification_updated", payload)
-    socketio.emit("analytics_updated", payload)
+    socketio.emit(
+        "new_comment",
+        payload,
+        room=f"ticket_{ticket.id}"
+    )
+
+    socketio.emit(
+        "global_ticket_updated",
+        payload
+    )
+
+    socketio.emit(
+        "sidebar_counts_updated",
+        payload
+    )
+
+    socketio.emit(
+        "notification_updated",
+        payload
+    )
+
+    socketio.emit(
+        "analytics_updated",
+        payload
+    )
 
 
 def emit_ticket_event(ticket, event_name, message):
@@ -642,8 +942,14 @@ def emit_ticket_event(ticket, event_name, message):
         "author_id": ticket.author_id
     }
 
-    socketio.emit(event_name, payload, room=f"ticket_{ticket.id}")
-    socketio.emit(event_name, payload)
+    # Send the actual ticket event only once to users viewing this ticket.
+    socketio.emit(
+        event_name,
+        payload,
+        room=f"ticket_{ticket.id}"
+    )
+
+    # These update other pages, badges, and analytics silently.
     socketio.emit("global_ticket_updated", payload)
     socketio.emit("sidebar_counts_updated", payload)
     socketio.emit("notification_updated", payload)
@@ -651,13 +957,29 @@ def emit_ticket_event(ticket, event_name, message):
 
 
 def serialize_comment(comment):
+    user = comment.user
+
     return {
         "id": comment.id,
-        "message": comment.comment,
-        "author": comment.user.name,
+        "message": comment.comment or "",
+        "author": (
+            user.name
+            if user
+            else "System"
+        ),
         "author_id": comment.author_id,
-        "role": comment.user.role,
-        "created_at": comment.created_at.strftime("%d %b %Y, %H:%M") if comment.created_at else ""
+        "role": (
+            user.role
+            if user
+            else "System"
+        ),
+        "created_at": (
+            comment.created_at.strftime(
+                "%d %b %Y, %H:%M"
+            )
+            if comment.created_at
+            else ""
+        )
     }
 
 
@@ -901,7 +1223,10 @@ def internal_reports():
 # DASHBOARD / LIST ROUTES
 # ============================================================
 
-@agent_blueprint.route("/dashboard")
+@agent_blueprint.route(
+    "/dashboard",
+    methods=["GET"]
+)
 @login_required(role="Agent")
 def dashboard():
     auto_close_waiting_customer_tickets()
@@ -909,74 +1234,187 @@ def dashboard():
 
     user_id = current_user.id
 
+    open_status_id = get_open_status_id()
+    pending_status_id = get_pending_status_id()
+    solved_status_id = get_solved_status_id()
+    closed_status_id = get_closed_status_id()
+    escalated_status_id = get_escalated_status_id()
+
+    inactive_status_ids = [
+        status_id
+        for status_id in [
+            closed_status_id,
+            solved_status_id
+        ]
+        if status_id is not None
+    ]
+
+    # ========================================================
+    # STATUS-SPECIFIC TICKETS
+    # ========================================================
+
     open_tickets = (
         Ticket.query
-        .filter(Ticket.owner_id == user_id)
-        .filter_by(status_id=get_open_status_id())
+        .filter(
+            Ticket.owner_id == user_id,
+            Ticket.status_id == open_status_id
+        )
+        .order_by(
+            desc(Ticket.updated_at),
+            desc(Ticket.created_at)
+        )
         .all()
     )
 
     pending = (
         Ticket.query
-        .filter(Ticket.owner_id == user_id)
-        .filter_by(status_id=get_pending_status_id())
+        .filter(
+            Ticket.owner_id == user_id,
+            Ticket.status_id == pending_status_id
+        )
+        .order_by(
+            desc(Ticket.updated_at),
+            desc(Ticket.created_at)
+        )
         .all()
     )
 
     solved = (
         Ticket.query
-        .filter(Ticket.owner_id == user_id)
-        .filter_by(status_id=get_status_id("Solved", 2))
+        .filter(
+            Ticket.owner_id == user_id,
+            Ticket.status_id == solved_status_id
+        )
+        .order_by(
+            desc(Ticket.updated_at),
+            desc(Ticket.created_at)
+        )
         .all()
     )
 
     closed = (
         Ticket.query
-        .filter(Ticket.owner_id == user_id)
-        .filter_by(status_id=get_closed_status_id())
+        .filter(
+            Ticket.owner_id == user_id,
+            Ticket.status_id == closed_status_id
+        )
+        .order_by(
+            desc(Ticket.updated_at),
+            desc(Ticket.created_at)
+        )
         .all()
     )
 
-    assigned_tickets = (
+    # ========================================================
+    # ACTIVE ASSIGNED TICKETS
+    # ========================================================
+
+    assigned_query = (
         Ticket.query
-        .filter(Ticket.owner_id == user_id)
-        .filter(Ticket.status_id != get_closed_status_id())
-        .order_by(desc(Ticket.updated_at))
+        .filter(
+            Ticket.owner_id == user_id
+        )
+    )
+
+    if inactive_status_ids:
+        assigned_query = (
+            assigned_query
+            .filter(
+                ~Ticket.status_id.in_(
+                    inactive_status_ids
+                )
+            )
+        )
+
+    assigned_tickets = (
+        assigned_query
+        .order_by(
+            desc(Ticket.updated_at),
+            desc(Ticket.created_at)
+        )
         .limit(10)
         .all()
     )
 
-    active_chats = (
+    # Use a fresh query for active chats.
+    active_chat_query = (
         Ticket.query
-        .filter(Ticket.owner_id == user_id)
-        .filter(Ticket.status_id != get_closed_status_id())
-        .order_by(desc(Ticket.updated_at))
+        .filter(
+            Ticket.owner_id == user_id
+        )
+    )
+
+    if inactive_status_ids:
+        active_chat_query = (
+            active_chat_query
+            .filter(
+                ~Ticket.status_id.in_(
+                    inactive_status_ids
+                )
+            )
+        )
+
+    active_chats = (
+        active_chat_query
+        .order_by(
+            desc(Ticket.updated_at),
+            desc(Ticket.created_at)
+        )
         .limit(5)
         .all()
     )
 
-    unassigned_count = (
+    # ========================================================
+    # UNASSIGNED ACTIVE TICKETS
+    # ========================================================
+
+    unassigned_query = (
         Ticket.query
-        .filter(Ticket.owner_id == None)
-        .filter(Ticket.status_id != get_closed_status_id())
-        .count()
+        .filter(
+            Ticket.owner_id.is_(None)
+        )
     )
+
+    if inactive_status_ids:
+        unassigned_query = (
+            unassigned_query
+            .filter(
+                ~Ticket.status_id.in_(
+                    inactive_status_ids
+                )
+            )
+        )
+
+    unassigned_count = (
+        unassigned_query.count()
+    )
+
+    # ========================================================
+    # TOTAL ASSIGNED
+    # Includes historical closed and solved tickets.
+    # ========================================================
 
     total_assigned = (
         Ticket.query
-        .filter(Ticket.owner_id == user_id)
+        .filter(
+            Ticket.owner_id == user_id
+        )
         .count()
     )
 
-    escalated_status = Status.query.filter_by(status="Escalated").first()
+    # ========================================================
+    # ESCALATED
+    # ========================================================
+
     escalated_count = 0
 
-    if escalated_status:
+    if escalated_status_id:
         escalated_count = (
             Ticket.query
             .filter(
                 Ticket.owner_id == user_id,
-                Ticket.status_id == escalated_status.id
+                Ticket.status_id
+                == escalated_status_id
             )
             .count()
         )
@@ -996,18 +1434,40 @@ def dashboard():
 
 
 
-
-@agent_blueprint.route("/new-tickets", methods=["GET"])
+@agent_blueprint.route(
+    "/new-tickets",
+    methods=["GET"]
+)
 @login_required(role="Agent")
 def new_tickets():
     auto_close_waiting_customer_tickets()
     notify_unassigned_tickets()
 
+    inactive_status_ids = [
+        status_id
+        for status_id in [
+            get_closed_status_id(),
+            get_solved_status_id()
+        ]
+        if status_id is not None
+    ]
+
+    query = Ticket.query.filter(
+        Ticket.owner_id.is_(None)
+    )
+
+    if inactive_status_ids:
+        query = query.filter(
+            ~Ticket.status_id.in_(
+                inactive_status_ids
+            )
+        )
+
     tickets = (
-        Ticket.query
-        .filter(Ticket.owner_id == None)
-        .filter(Ticket.status_id != get_closed_status_id())
-        .order_by(desc(Ticket.created_at))
+        query
+        .order_by(
+            desc(Ticket.created_at)
+        )
         .all()
     )
 
@@ -1020,62 +1480,135 @@ def new_tickets():
     )
 
 
+
 # ============================================================
 # TICKET ACTIONS
 # ============================================================
 
-@agent_blueprint.route("/ticket/claim/<int:id>", methods=["POST"])
+@agent_blueprint.route(
+    "/ticket/claim/<int:id>",
+    methods=["POST"]
+)
 @login_required(role="Agent")
 def claim_ticket(id):
-
-    # Atomic claim: only update if owner_id is NULL
-    updated = (
-        Ticket.query
-        .filter(Ticket.id == id)
-        .filter(Ticket.owner_id == None)
-        .update({
-            "owner_id": current_user.id,
-            "unassigned_15min_sent": False,
-            "unassigned_30min_sent": False
-        })
-    )
-
-    db.session.commit()
-
-    # If updated == 0, someone else claimed it first
-    if updated == 0:
-        flash("This ticket has already been claimed by another support staff.", "warning")
-        return redirect(url_for("agent.new_tickets"))
-
-    # Reload the ticket AFTER the atomic update
     ticket = Ticket.query.get_or_404(id)
 
-    # Update status if needed
-    if ticket.status_id == get_open_status_id():
-        ticket.status_id = get_pending_status_id()
+    if (
+        ticket.status_id
+        == get_closed_status_id()
+    ):
+        flash(
+            "Closed tickets cannot be claimed.",
+            "warning"
+        )
 
-    # Add join message
-    join_message = f"✅ Support agent {current_user.name} has joined the chat."
+        return redirect(
+            url_for("agent.new_tickets")
+        )
+
+    if (
+        ticket.status_id
+        == get_solved_status_id()
+    ):
+        flash(
+            "Solved tickets cannot be claimed.",
+            "warning"
+        )
+
+        return redirect(
+            url_for("agent.new_tickets")
+        )
+
+    if ticket.owner_id:
+        flash(
+            "This ticket has already been claimed.",
+            "warning"
+        )
+
+        return redirect(
+            url_for("agent.new_tickets")
+        )
+
+    ticket.owner_id = current_user.id
+
+    if (
+        ticket.status_id
+        == get_open_status_id()
+    ):
+        ticket.status_id = (
+            get_pending_status_id()
+        )
+
+    ticket.updated_at = (
+        datetime.datetime.utcnow()
+    )
+
+    ticket.unassigned_15min_sent = False
+    ticket.unassigned_30min_sent = False
 
     comment = Comment(
-        comment=join_message,
+        comment=(
+            f"✅ Support agent "
+            f"{current_user.name} joined the chat."
+        ),
         author_id=current_user.id,
         ticket_id=ticket.id
     )
 
     db.session.add(comment)
-    db.session.commit()
 
-    notify_customer(ticket, "joined your support ticket")
-    emit_comment(ticket, comment, is_attachment=False)
-    emit_ticket_event(ticket, "agent_joined", join_message)
+    if not safe_commit(
+        "Ticket claim failed."
+    ):
+        flash(
+            "The ticket could not be claimed.",
+            "danger"
+        )
 
-    flash("You have joined this ticket.", "primary")
-    return redirect(url_for("agent.view_ticket", id=id))
+        return redirect(
+            url_for("agent.new_tickets")
+        )
 
+    if ticket.author:
+        safe_send_email(
+            send_ticket_assigned_email,
+            ticket.author,
+            ticket,
+            current_user
+        )
 
+    emit_comment(
+        ticket,
+        comment
+    )
 
-@agent_blueprint.route("/create-ticket", methods=["GET", "POST"])
+    emit_ticket_event(
+        ticket,
+        "agent_joined",
+        comment.comment
+    )
+
+    emit_global_refresh(
+        "ticket_claimed",
+        ticket
+    )
+
+    flash(
+        "Ticket claimed successfully.",
+        "success"
+    )
+
+    return redirect(
+        url_for(
+            "agent.view_ticket",
+            id=ticket.id
+        )
+    )
+
+@agent_blueprint.route(
+    "/create-ticket",
+    methods=["GET", "POST"]
+)
 @login_required(role="Agent")
 def create_ticket():
     form = TicketForm()
@@ -1085,15 +1618,47 @@ def create_ticket():
         attachment = None
         original_f = None
 
+        # ----------------------------------------------------
+        # SAVE OPTIONAL ATTACHMENT
+        # ----------------------------------------------------
+
         if file and file.filename:
-            folder_id = os.path.join(path, "app/static/uploads/attachments", str(current_user.id))
-            os.makedirs(folder_id, exist_ok=True)
+            folder_id = os.path.join(
+                path,
+                "app",
+                "static",
+                "uploads",
+                "attachments",
+                str(current_user.id)
+            )
 
-            original_f = secure_filename(file.filename)
-            _, ext = os.path.splitext(original_f)
-            attachment = secure_filename(uuid.uuid4().hex + ext.lower())
+            os.makedirs(
+                folder_id,
+                exist_ok=True
+            )
 
-            file.save(os.path.join(folder_id, attachment))
+            original_f = secure_filename(
+                file.filename
+            )
+
+            _, ext = os.path.splitext(
+                original_f
+            )
+
+            attachment = secure_filename(
+                uuid.uuid4().hex + ext.lower()
+            )
+
+            file.save(
+                os.path.join(
+                    folder_id,
+                    attachment
+                )
+            )
+
+        # ----------------------------------------------------
+        # CREATE TICKET
+        # ----------------------------------------------------
 
         ticket = Ticket(
             number=random_numbers(),
@@ -1111,214 +1676,698 @@ def create_ticket():
         db.session.add(ticket)
         db.session.commit()
 
-        socketio.emit("ticket_created", {
+        # ----------------------------------------------------
+        # SEND TICKET-CREATED EMAIL
+        # ----------------------------------------------------
+
+        email_sent = send_ticket_created_email(
+            current_user,
+            ticket
+        )
+
+        if not email_sent:
+            current_app.logger.error(
+                "Agent ticket-created email failed "
+                "for ticket_id=%s agent_id=%s",
+                ticket.id,
+                current_user.id
+            )
+
+        # ----------------------------------------------------
+        # SYSTEM EVENT
+        # ----------------------------------------------------
+
+        log_system_event(
+            event_type="Ticket Created",
+            severity="Info",
+            message=(
+                f"Ticket #{ticket.number} was created "
+                f"by agent {current_user.email}."
+            ),
+            user_id=current_user.id,
+            ticket_id=ticket.id
+        )
+
+        # ----------------------------------------------------
+        # REAL-TIME UPDATE
+        # ----------------------------------------------------
+
+        payload = {
             "ticket_id": ticket.id,
             "ticket_number": ticket.number,
             "message": "Ticket created by agent."
-        })
+        }
 
-        emit_global_refresh("ticket_created", ticket)
+        socketio.emit(
+            "ticket_created",
+            payload
+        )
 
-        flash("Ticket has been created.", "primary")
-        return redirect(url_for("agent.new_tickets"))
+        emit_global_refresh(
+            "ticket_created",
+            ticket
+        )
+
+        if email_sent:
+            flash(
+                "Ticket has been created. "
+                "A confirmation email was sent.",
+                "success"
+            )
+        else:
+            flash(
+                "Ticket has been created, but the confirmation "
+                "email could not be sent.",
+                "warning"
+            )
+
+        return redirect(
+            url_for("agent.new_tickets")
+        )
 
     return render_template(
         "agent/new_tickets.html",
         form=form,
         tickets=[]
     )
-
-
-@agent_blueprint.route("/view-ticket/<int:id>", methods=["GET", "POST"])
+@agent_blueprint.route(
+    "/view-ticket/<int:id>",
+    methods=["GET", "POST"]
+)
 @login_required(role="Agent")
 def view_ticket(id):
-    ticket = get_agent_ticket_or_404(id, allow_unassigned=True)
-
-    if not ticket:
-        flash("Ticket not found.", "warning")
-        return redirect(url_for("agent.new_tickets"))
+    ticket = get_agent_ticket_or_404(
+        id,
+        allow_unassigned=True
+    )
 
     comments = (
         Comment.query
-        .filter(Comment.ticket_id == id)
-        .order_by(Comment.created_at.asc())
+        .filter(
+            Comment.ticket_id == ticket.id
+        )
+        .order_by(
+            Comment.created_at.asc()
+        )
         .all()
     )
 
-    form = UpdateTicketForm(
-        owner=ticket.owner_id,
-        priority=ticket.priority_id,
-        status=ticket.status_id
-    )
-
+    form = UpdateTicketForm()
     comment_form = CommentForm()
 
+    closed_status_id = (
+        get_closed_status_id()
+    )
+
+    is_closed = (
+        ticket.status_id
+        == closed_status_id
+    )
+
+    # ========================================================
+    # LOAD CURRENT VALUES INTO FORM
+    # ========================================================
+
+    if request.method == "GET":
+        form.owner.data = (
+            str(ticket.owner_id)
+            if ticket.owner_id
+            else ""
+        )
+
+        form.priority.data = (
+            str(ticket.priority_id)
+            if ticket.priority_id
+            else ""
+        )
+
+        form.status.data = (
+            str(ticket.status_id)
+            if ticket.status_id
+            else ""
+        )
+
+    # ========================================================
+    # UPDATE TICKET
+    # ========================================================
+
     if form.validate_on_submit():
-        if ticket.status_id == get_closed_status_id():
-            flash("Closed tickets cannot be updated. Please use Reopen Ticket first.", "warning")
-            return redirect(url_for("agent.view_ticket", id=id))
+
+        if is_closed:
+            flash(
+                "Closed tickets cannot be changed. "
+                "Reopen the ticket first.",
+                "warning"
+            )
+
+            return redirect(
+                url_for(
+                    "agent.view_ticket",
+                    id=ticket.id
+                )
+            )
 
         old_owner_id = ticket.owner_id
         old_status_id = ticket.status_id
         old_priority_id = ticket.priority_id
 
-        new_status_id = int(form.status.data)
-        new_priority_id = int(form.priority.data)
+        try:
+            new_owner_id = (
+                int(form.owner.data)
+                if form.owner.data
+                else None
+            )
 
-        if not form.owner.data:
-            if ticket.owner_id:
-                notify_customer(ticket, "unassigned ticket")
-                notify_owner(ticket, "unassigned ticket")
+            new_priority_id = (
+                int(form.priority.data)
+                if form.priority.data
+                else old_priority_id
+            )
 
-            ticket.owner_id = None
+            new_status_id = (
+                int(form.status.data)
+                if form.status.data
+                else old_status_id
+            )
 
-        else:
-            new_owner_id = int(form.owner.data)
+        except (TypeError, ValueError):
+            flash(
+                "One or more selected values are invalid.",
+                "danger"
+            )
 
-            if old_owner_id != new_owner_id:
-                notify_customer(ticket, "assigned ticket")
+            return redirect(
+                url_for(
+                    "agent.view_ticket",
+                    id=ticket.id
+                )
+            )
 
-                if new_owner_id != current_user.id:
-                    notify_user(
-                        message="assigned ticket",
-                        receiver_id=new_owner_id,
-                        sender_id=current_user.id,
-                        ticket_id=ticket.id
-                    )
+        # ====================================================
+        # VALIDATE OWNER
+        # ====================================================
 
-                join_message = f"✅ Support agent {current_user.name} joined the chat."
+        new_owner = None
 
-                join_comment = Comment(
-                    comment=join_message,
-                    author_id=current_user.id,
-                    ticket_id=ticket.id
+        if new_owner_id:
+            new_owner = User.query.get(
+                new_owner_id
+            )
+
+            if (
+                not new_owner
+                or new_owner.role
+                not in [
+                    "Agent",
+                    "Administrator"
+                ]
+            ):
+                flash(
+                    "The selected assignee is invalid.",
+                    "danger"
                 )
 
-                db.session.add(join_comment)
+                return redirect(
+                    url_for(
+                        "agent.view_ticket",
+                        id=ticket.id
+                    )
+                )
 
+        # ====================================================
+        # VALIDATE PRIORITY
+        # ====================================================
+
+        if (
+            new_priority_id
+            and not Priority.query.get(
+                new_priority_id
+            )
+        ):
+            flash(
+                "The selected priority is invalid.",
+                "danger"
+            )
+
+            return redirect(
+                url_for(
+                    "agent.view_ticket",
+                    id=ticket.id
+                )
+            )
+
+        # ====================================================
+        # VALIDATE STATUS
+        # ====================================================
+
+        if (
+            new_status_id
+            and not Status.query.get(
+                new_status_id
+            )
+        ):
+            flash(
+                "The selected status is invalid.",
+                "danger"
+            )
+
+            return redirect(
+                url_for(
+                    "agent.view_ticket",
+                    id=ticket.id
+                )
+            )
+
+        assignment_comment = None
+        close_comment = None
+
+        now = datetime.datetime.utcnow()
+
+        # ====================================================
+        # OWNER CHANGE
+        # ====================================================
+
+        if old_owner_id != new_owner_id:
             ticket.owner_id = new_owner_id
 
-        if old_priority_id != new_priority_id:
-            notify_customer(ticket, "updated priority on ticket")
+            if new_owner:
+                assignment_message = (
+                    f"🔄 Ticket assigned to "
+                    f"{new_owner.name} by "
+                    f"{current_user.name}."
+                )
 
-        ticket.priority_id = new_priority_id
+                # Ticket is no longer unassigned.
+                ticket.unassigned_15min_sent = False
+                ticket.unassigned_30min_sent = False
 
-        if old_status_id != new_status_id:
-            notify_customer(ticket, "updated status on ticket")
+            else:
+                assignment_message = (
+                    f"Ticket became unassigned by "
+                    f"{current_user.name}."
+                )
 
-        if old_status_id != new_status_id and new_status_id == get_closed_status_id():
-            close_message = f"Ticket closed by support agent {current_user.name}."
+                # Start the unassigned timer now.
+                ticket.updated_at = now
 
-            close_comment = Comment(
-                comment=close_message,
+                # Allow the 15-minute and 30-minute alerts
+                # to run for this new unassigned period.
+                ticket.unassigned_15min_sent = False
+                ticket.unassigned_30min_sent = False
+
+            assignment_comment = Comment(
+                comment=assignment_message,
                 author_id=current_user.id,
                 ticket_id=ticket.id
             )
 
-            db.session.add(close_comment)
+            db.session.add(
+                assignment_comment
+            )
 
-            ChatMessage.query.filter(
-                ChatMessage.user_id == ticket.author_id
-            ).update({
-                "customer_visible": False
-            })
+        # ====================================================
+        # PRIORITY UPDATE
+        # ====================================================
 
-        ticket.status_id = new_status_id
-        if new_status_id == get_waiting_customer_status_id():
-            ticket.waiting_customer_since = datetime.datetime.utcnow()
+        ticket.priority_id = (
+            new_priority_id
+        )
+
+        # ====================================================
+        # STATUS UPDATE
+        # ====================================================
+
+        ticket.status_id = (
+            new_status_id
+        )
+
+        waiting_status_id = (
+            get_waiting_customer_status_id()
+        )
+
+        if (
+            waiting_status_id
+            and new_status_id
+            == waiting_status_id
+        ):
+            if (
+                old_status_id
+                != waiting_status_id
+                or not ticket.waiting_customer_since
+            ):
+                ticket.waiting_customer_since = now
+
             ticket.inactive_reminder_sent = False
+
         else:
             ticket.waiting_customer_since = None
             ticket.inactive_reminder_sent = False
-        db.session.commit()
 
-        if old_owner_id != ticket.owner_id and ticket.owner_id is not None:
-            latest_join = (
-                Comment.query
-                .filter(Comment.ticket_id == ticket.id)
-                .filter(Comment.comment.like("✅ Support agent%joined the chat."))
-                .order_by(desc(Comment.created_at))
-                .first()
+        # ====================================================
+        # CLOSED STATUS
+        # ====================================================
+
+        status_changed_to_closed = (
+            old_status_id != new_status_id
+            and new_status_id
+            == closed_status_id
+        )
+
+        if status_changed_to_closed:
+            close_comment = Comment(
+                comment=(
+                    f"🔒 Ticket closed by "
+                    f"{current_user.name}."
+                ),
+                author_id=current_user.id,
+                ticket_id=ticket.id
             )
 
-            if latest_join:
-                emit_comment(ticket, latest_join, is_attachment=False)
-                emit_ticket_event(ticket, "agent_joined", latest_join.comment)
-
-        if old_status_id != new_status_id and new_status_id == get_closed_status_id():
-            latest_close = (
-                Comment.query
-                .filter(Comment.ticket_id == ticket.id)
-                .filter(Comment.comment.like("Ticket closed by support agent%"))
-                .order_by(desc(Comment.created_at))
-                .first()
+            db.session.add(
+                close_comment
             )
 
-            if latest_close:
-                emit_comment(ticket, latest_close, is_attachment=False)
-                emit_ticket_event(ticket, "ticket_closed", latest_close.comment)
+        # Only overwrite updated_at here if the ticket did not
+        # just become unassigned. In both cases the value is now,
+        # but this condition makes the timer purpose clear.
+        if not (
+            old_owner_id != new_owner_id
+            and new_owner_id is None
+        ):
+            ticket.updated_at = now
 
-        emit_global_refresh("ticket_updated", ticket)
+        # ====================================================
+        # DATABASE COMMIT
+        # ====================================================
 
-        flash("Ticket has been updated.", "primary")
-        return redirect(url_for("agent.view_ticket", id=id))
+        if not safe_commit(
+            "Agent ticket update failed "
+            f"for ticket_id={ticket.id}."
+        ):
+            flash(
+                "The ticket could not be updated.",
+                "danger"
+            )
+
+            return redirect(
+                url_for(
+                    "agent.view_ticket",
+                    id=ticket.id
+                )
+            )
+
+        # ====================================================
+        # ASSIGNMENT EMAIL
+        # ====================================================
+
+        if (
+            old_owner_id != new_owner_id
+            and new_owner
+            and ticket.author
+        ):
+            if old_owner_id:
+                safe_send_email(
+                    send_ticket_reassigned_email,
+                    ticket.author,
+                    ticket
+                )
+
+            else:
+                safe_send_email(
+                    send_ticket_assigned_email,
+                    ticket.author,
+                    ticket,
+                    new_owner
+                )
+
+        # ====================================================
+        # CLOSED EMAILS AND CUSTOMER EVENT
+        # ====================================================
+
+        if (
+            status_changed_to_closed
+            and ticket.author
+        ):
+            safe_send_email(
+                send_ticket_closed_email,
+                ticket.author,
+                ticket
+            )
+
+            safe_send_email(
+                send_satisfaction_email,
+                ticket.author,
+                ticket
+            )
+
+            socketio.emit(
+                "customer_ticket_closed",
+                {
+                    "ticket_id": ticket.id,
+                    "message": "Ticket closed."
+                },
+                room=f"user_{ticket.author_id}"
+            )
+
+        # ====================================================
+        # REAL-TIME EVENTS
+        # ====================================================
+
+        if assignment_comment:
+            emit_comment(
+                ticket,
+                assignment_comment
+            )
+
+            if new_owner:
+                emit_ticket_event(
+                    ticket,
+                    "agent_joined",
+                    assignment_comment.comment
+                )
+            else:
+                emit_ticket_event(
+                    ticket,
+                    "ticket_unassigned",
+                    assignment_comment.comment
+                )
+
+        if close_comment:
+            emit_comment(
+                ticket,
+                close_comment
+            )
+
+            emit_ticket_event(
+                ticket,
+                "ticket_closed",
+                close_comment.comment
+            )
+
+        emit_global_refresh(
+            "ticket_updated",
+            ticket
+        )
+
+        flash(
+            "Ticket updated successfully.",
+            "success"
+        )
+
+        return redirect(
+            url_for(
+                "agent.view_ticket",
+                id=ticket.id
+            )
+        )
 
     return render_template(
         "agent/view_ticket.html",
+        ticket=ticket,
+        comments=comments,
         form=form,
         comment_form=comment_form,
-        ticket=ticket,
-        comments=comments
+        is_closed=is_closed
     )
 
-
-@agent_blueprint.route("/ticket/reopen/<int:id>", methods=["GET", "POST"])
+@agent_blueprint.route(
+    "/ticket/reopen/<int:id>",
+    methods=["POST"]
+)
 @login_required(role="Agent")
 def reopen_ticket(id):
     ticket = get_agent_ticket_or_404(id)
 
-    ticket.status_id = get_pending_status_id()
+    closed_status_id = (
+        get_closed_status_id()
+    )
 
-    reopen_message = f"Ticket reopened by agent {current_user.name}."
+    if (
+        ticket.status_id
+        != closed_status_id
+    ):
+        flash(
+            "Only closed tickets can be reopened.",
+            "warning"
+        )
+
+        return redirect(
+            url_for(
+                "agent.view_ticket",
+                id=ticket.id
+            )
+        )
+
+    ticket.status_id = (
+        get_pending_status_id()
+    )
+
+    ticket.waiting_customer_since = None
+    ticket.inactive_reminder_sent = False
+    ticket.updated_at = (
+        datetime.datetime.utcnow()
+    )
 
     comment = Comment(
-        comment=reopen_message,
+        comment=(
+            f"🔓 Ticket reopened by "
+            f"{current_user.name}."
+        ),
         author_id=current_user.id,
         ticket_id=ticket.id
     )
 
     db.session.add(comment)
-    db.session.commit()
 
-    notify_customer(ticket, "reopened ticket")
-    notify_admins(ticket, "reopened ticket")
+    if not safe_commit(
+        "Ticket reopening failed."
+    ):
+        flash(
+            "The ticket could not be reopened.",
+            "danger"
+        )
 
-    emit_comment(ticket, comment, is_attachment=False)
-    emit_ticket_event(ticket, "ticket_reopened", reopen_message)
+        return redirect(
+            url_for(
+                "agent.view_ticket",
+                id=ticket.id
+            )
+        )
 
-    flash("Ticket has been reopened and changed to Pending.", "primary")
-    return redirect(url_for("agent.view_ticket", id=ticket.id))
+    if ticket.author:
+        safe_send_email(
+            send_ticket_reopened_email,
+            ticket.author,
+            ticket
+        )
 
+        socketio.emit(
+            "customer_ticket_reopened",
+            {
+                "ticket_id": ticket.id,
+                "message": (
+                    "Ticket reopened."
+                )
+            },
+            room=f"user_{ticket.author_id}"
+        )
 
-@agent_blueprint.route("/ticket/escalate/<int:id>", methods=["POST"])
+    emit_comment(
+        ticket,
+        comment
+    )
+
+    emit_ticket_event(
+        ticket,
+        "ticket_reopened",
+        comment.comment
+    )
+
+    emit_global_refresh(
+        "ticket_reopened",
+        ticket
+    )
+
+    flash(
+        "Ticket reopened successfully.",
+        "success"
+    )
+
+    return redirect(
+        url_for(
+            "agent.view_ticket",
+            id=ticket.id
+        )
+    )
+
+@agent_blueprint.route(
+    "/ticket/escalate/<int:id>",
+    methods=["POST"]
+)
 @login_required(role="Agent")
 def escalate_ticket(id):
     ticket = get_agent_ticket_or_404(id)
 
-    if ticket.status and ticket.status.status == "Closed":
-        flash("Closed tickets cannot be escalated. Reopen the ticket first.", "warning")
-        return redirect(url_for("agent.view_ticket", id=ticket.id))
+    if (
+        ticket.status_id
+        == get_closed_status_id()
+    ):
+        flash(
+            "Closed tickets cannot be escalated. "
+            "Reopen the ticket first.",
+            "warning"
+        )
 
-    escalated_status = Status.query.filter_by(status="Escalated").first()
+        return redirect(
+            url_for(
+                "agent.view_ticket",
+                id=ticket.id
+            )
+        )
 
-    if not escalated_status:
-        flash("Escalated status does not exist. Please add it first.", "danger")
-        return redirect(url_for("agent.view_ticket", id=ticket.id))
+    escalated_status_id = (
+        get_escalated_status_id()
+    )
 
-    ticket.status_id = escalated_status.id
+    if not escalated_status_id:
+        flash(
+            "The Escalated status does not exist.",
+            "danger"
+        )
+
+        return redirect(
+            url_for(
+                "agent.view_ticket",
+                id=ticket.id
+            )
+        )
+
+    if (
+        ticket.status_id
+        == escalated_status_id
+    ):
+        flash(
+            "This ticket is already escalated.",
+            "warning"
+        )
+
+        return redirect(
+            url_for(
+                "agent.view_ticket",
+                id=ticket.id
+            )
+        )
+
+    ticket.status_id = escalated_status_id
     ticket.owner_id = None
+    ticket.updated_at = (
+        datetime.datetime.utcnow()
+    )
 
-    escalate_message = f"🚨 Ticket escalated to admin by support agent {current_user.name}."
+    escalate_message = (
+        f"🚨 Ticket escalated to admin by "
+        f"support agent {current_user.name}."
+    )
 
     comment = Comment(
         comment=escalate_message,
@@ -1327,106 +2376,378 @@ def escalate_ticket(id):
     )
 
     db.session.add(comment)
-    db.session.commit()
 
-    notify_customer(ticket, "ticket escalated to admin")
-    notify_admins(ticket, "escalated ticket to admin")
+    if not safe_commit(
+        "Ticket escalation failed."
+    ):
+        flash(
+            "The ticket could not be escalated.",
+            "danger"
+        )
 
-    emit_comment(ticket, comment, is_attachment=False)
-    emit_ticket_event(ticket, "ticket_escalated", escalate_message)
+        return redirect(
+            url_for(
+                "agent.view_ticket",
+                id=ticket.id
+            )
+        )
 
-    flash("Ticket has been escalated to admin.", "primary")
-    return redirect(url_for("agent.view_ticket", id=ticket.id))
+    if ticket.author:
+        safe_send_email(
+            send_ticket_escalated_email,
+            ticket.author,
+            ticket,
+            current_user
+        )
 
+    notify_customer(
+        ticket,
+        "Your ticket was escalated to an administrator."
+    )
 
-@agent_blueprint.route("/comment-ticket/<int:id>", methods=["GET", "POST"])
+    notify_admins(
+        ticket,
+        f"Ticket #{ticket.number} was escalated."
+    )
+
+    emit_comment(
+        ticket,
+        comment
+    )
+
+    emit_ticket_event(
+        ticket,
+        "ticket_escalated",
+        escalate_message
+    )
+
+    emit_global_refresh(
+        "ticket_escalated",
+        ticket
+    )
+
+    flash(
+        "Ticket escalated successfully.",
+        "success"
+    )
+
+    return redirect(
+        url_for(
+            "agent.view_ticket",
+            id=ticket.id
+        )
+    )
+
+@agent_blueprint.route(
+    "/comment-ticket/<int:id>",
+    methods=["POST"]
+)
 @login_required(role="Agent")
 def comment_ticket(id):
     ticket = get_agent_ticket_or_404(id)
-    comment_form = CommentForm()
 
-    if ticket.status_id == get_closed_status_id():
-        return jsonify({
-            "success": False,
-            "message": "Closed tickets cannot receive new messages."
-        }), 400
+    if (
+        ticket.status_id
+        == get_closed_status_id()
+    ):
+        return jsonify(
+            success=False,
+            message=(
+                "This ticket is closed. "
+                "Reopen it before replying."
+            )
+        ), 400
 
-    if comment_form.validate_on_submit():
-        comment_text = (comment_form.comment.data or "").strip()
+    form = CommentForm()
 
-        if not comment_text:
-            return jsonify({
-                "success": False,
-                "message": "Message is empty."
-            }), 400
+    if not form.validate_on_submit():
+        return jsonify(
+            success=False,
+            message="Invalid message submission.",
+            errors=form.errors
+        ), 400
 
-        new_comment = Comment(
-            comment=comment_text,
-            author_id=current_user.id,
-            ticket_id=ticket.id
+    message = (
+        form.comment.data or ""
+    ).strip()
+
+    if not message:
+        return jsonify(
+            success=False,
+            message="Message cannot be empty."
+        ), 400
+
+    comment = Comment(
+        comment=message,
+        author_id=current_user.id,
+        ticket_id=ticket.id
+    )
+
+    db.session.add(comment)
+
+    if (
+        ticket.status_id
+        == get_waiting_customer_status_id()
+    ):
+        ticket.status_id = (
+            get_pending_status_id()
         )
 
-        db.session.add(new_comment)
-        db.session.commit()
+        ticket.waiting_customer_since = None
+        ticket.inactive_reminder_sent = False
 
-        notify_customer(ticket, "commented on ticket")
-        notify_owner(ticket, "commented on ticket")
+    ticket.updated_at = (
+        datetime.datetime.utcnow()
+    )
 
-        emit_comment(ticket, new_comment, is_attachment=False)
+    if not safe_commit(
+        "Agent reply could not be saved."
+    ):
+        return jsonify(
+            success=False,
+            message="Message could not be saved."
+        ), 500
 
-        return jsonify({
-            "success": True,
-            "comment": serialize_comment(new_comment)
-        }), 200
+    email_sent = False
 
-    return jsonify({
-        "success": False,
-        "message": "Invalid message."
-    }), 400
+    if ticket.author:
+        email_sent = safe_send_email(
+            send_ticket_reply_email,
+            ticket.author,
+            ticket,
+            message
+        )
 
+    emit_comment(
+        ticket,
+        comment
+    )
 
-@agent_blueprint.route("/ticket/delete/<int:uid>/<int:tid>", methods=["GET", "POST"])
+    emit_global_refresh(
+        "ticket_message",
+        ticket
+    )
+
+    return jsonify(
+        success=True,
+        email_sent=email_sent,
+        comment=serialize_comment(
+            comment
+        )
+    ), 200
+
+@agent_blueprint.route(
+    "/ticket/delete/<int:uid>/<int:tid>",
+    methods=["POST"]
+)
 @login_required(role="Agent")
 def delete_ticket(uid, tid):
     ticket = get_agent_ticket_or_404(tid)
 
-    if request.method == "POST":
-        ticket_id = ticket.id
-        ticket_number = ticket.number
+    ticket_id = ticket.id
+    ticket_number = ticket.number
+    ticket_subject = (
+        ticket.subject or "No subject"
+    )
 
-        if ticket.file_link:
-            folder_id = os.path.join(path, "app/static/uploads/attachments", str(uid))
-            file_path = os.path.join(folder_id, ticket.file_link)
+    customer = ticket.author
+    customer_id = ticket.author_id
 
-            if os.path.exists(file_path):
+    email_sent = False
+
+    if customer and customer.email:
+        email_sent = safe_send_email(
+            send_ticket_deleted_email,
+            customer,
+            ticket_number=str(
+                ticket_number
+            ),
+            ticket_subject=(
+                ticket_subject
+            ),
+            deleted_by=(
+                f"support agent "
+                f"{current_user.name}"
+            ),
+            deleted_ticket_id=(
+                ticket.id
+            )
+        )
+
+    if ticket.file_link and customer_id:
+        folder_id = os.path.join(
+            path,
+            "app",
+            "static",
+            "uploads",
+            "attachments",
+            str(customer_id)
+        )
+
+        file_path = os.path.join(
+            folder_id,
+            secure_filename(
+                ticket.file_link
+            )
+        )
+
+        if os.path.isfile(file_path):
+            try:
                 os.remove(file_path)
 
+            except OSError:
+                current_app.logger.exception(
+                    "Ticket attachment deletion "
+                    "failed for ticket_id=%s",
+                    ticket.id
+                )
+
+    try:
         db.session.delete(ticket)
         db.session.commit()
 
-        payload = {
-            "ticket_id": ticket_id,
-            "ticket_number": ticket_number,
-            "message": "Ticket deleted by agent."
-        }
+    except Exception:
+        db.session.rollback()
 
-        socketio.emit("ticket_deleted", payload)
-        socketio.emit("global_ticket_updated", payload)
-        socketio.emit("sidebar_counts_updated", payload)
-        socketio.emit("notification_updated", payload)
-        socketio.emit("analytics_updated", payload)
+        current_app.logger.exception(
+            "Ticket deletion failed for "
+            "ticket_id=%s",
+            ticket_id
+        )
 
-        flash("Ticket has been deleted.", "primary")
-        return redirect(url_for("agent.new_tickets"))
+        flash(
+            "The ticket could not be deleted.",
+            "danger"
+        )
 
-    return redirect(url_for("agent.my_tickets"))
+        return redirect(
+            url_for(
+                "agent.view_ticket",
+                id=ticket_id
+            )
+        )
 
+    log_system_event(
+        event_type="Ticket Deleted",
+        severity="Warning",
+        message=(
+            f"Ticket #{ticket_number} was deleted "
+            f"by agent {current_user.email}."
+        ),
+        user_id=current_user.id,
+        ticket_id=None
+    )
 
-@agent_blueprint.route("/download/attachment/<int:id>/<filename>")
+    payload = {
+        "ticket_id": ticket_id,
+        "ticket_number": ticket_number,
+        "message": (
+            "Ticket deleted by agent."
+        )
+    }
+
+    socketio.emit(
+        "ticket_deleted",
+        payload
+    )
+
+    socketio.emit(
+        "global_ticket_updated",
+        payload
+    )
+
+    socketio.emit(
+        "sidebar_counts_updated",
+        payload
+    )
+
+    socketio.emit(
+        "notification_updated",
+        payload
+    )
+
+    socketio.emit(
+        "analytics_updated",
+        payload
+    )
+
+    if email_sent:
+        flash(
+            "Ticket deleted and the customer "
+            "was notified.",
+            "success"
+        )
+    else:
+        flash(
+            "Ticket deleted. The customer email "
+            "could not be sent.",
+            "warning"
+        )
+
+    return redirect(
+        url_for("agent.my_tickets")
+    )
+
+@agent_blueprint.route(
+    "/download/attachment/<int:id>/<filename>",
+    methods=["GET"]
+)
+@login_required(role="Agent")
 def download_attachment(id, filename):
-    folder_id = os.path.join(path, "app/static/uploads/attachments", str(id))
-    location = os.path.join(folder_id, filename)
-    return send_file(location, as_attachment=True)
+    safe_filename = secure_filename(
+        filename
+    )
+
+    if (
+        not safe_filename
+        or safe_filename != filename
+    ):
+        abort(400)
+
+    ticket = (
+        Ticket.query
+        .filter(
+            Ticket.author_id == id,
+            Ticket.file_link
+            == safe_filename
+        )
+        .filter(
+            or_(
+                Ticket.owner_id
+                == current_user.id,
+                Ticket.author_id
+                == current_user.id
+            )
+        )
+        .first_or_404()
+    )
+
+    folder_id = os.path.join(
+        path,
+        "app",
+        "static",
+        "uploads",
+        "attachments",
+        str(ticket.author_id)
+    )
+
+    file_path = os.path.join(
+        folder_id,
+        safe_filename
+    )
+
+    if not os.path.isfile(file_path):
+        abort(404)
+
+    return send_from_directory(
+        folder_id,
+        safe_filename,
+        as_attachment=True,
+        download_name=(
+            ticket.orig_file
+            or safe_filename
+        )
+    )
 
 
 # ============================================================
@@ -1453,41 +2774,186 @@ def category():
     return render_template("agent/category.html", form=form, categories=categories)
 
 
-@agent_blueprint.route("/category/update/<int:id>", methods=["GET", "POST"])
+@agent_blueprint.route(
+    "/category/update/<int:id>",
+    methods=["GET", "POST"]
+)
 @login_required(role="Agent")
 def update_category(id):
-    category_obj = Category.query.get_or_404(id)
+    category_obj = (
+        Category.query.get_or_404(id)
+    )
+
     form = CategoryForm()
 
+    if request.method == "GET":
+        form.category.data = (
+            category_obj.category
+        )
+
     if form.validate_on_submit():
-        category_obj.category = form.category.data
-        db.session.commit()
+        category_name = (
+            form.category.data or ""
+        ).strip()
 
-        socketio.emit("category_updated", {"message": "Category updated by agent."})
-        emit_global_refresh("category_updated")
+        if not category_name:
+            flash(
+                "Category name is required.",
+                "warning"
+            )
 
-        flash("Category has been updated.", "primary")
-        return redirect(url_for("agent.category"))
+            return redirect(
+                url_for(
+                    "agent.update_category",
+                    id=id
+                )
+            )
 
-    return render_template("agent/category.html", form=form)
+        duplicate = (
+            Category.query
+            .filter(
+                func.lower(
+                    Category.category
+                )
+                == category_name.lower(),
+                Category.id != category_obj.id
+            )
+            .first()
+        )
+
+        if duplicate:
+            flash(
+                "A category with this name "
+                "already exists.",
+                "warning"
+            )
+
+            return redirect(
+                url_for(
+                    "agent.update_category",
+                    id=id
+                )
+            )
+
+        category_obj.category = (
+            category_name
+        )
+
+        if not safe_commit(
+            "Category update failed."
+        ):
+            flash(
+                "Category could not be updated.",
+                "danger"
+            )
+
+            return redirect(
+                url_for(
+                    "agent.category"
+                )
+            )
+
+        emit_global_refresh(
+            "category_updated"
+        )
+
+        flash(
+            "Category updated successfully.",
+            "success"
+        )
+
+        return redirect(
+            url_for("agent.category")
+        )
+
+    return render_template(
+        "agent/category.html",
+        form=form,
+        categories=Category.query.all(),
+        editing_category=category_obj
+    )
 
 
-@agent_blueprint.route("/category/delete/<int:id>", methods=["GET", "POST"])
+@agent_blueprint.route(
+    "/category/delete/<int:id>",
+    methods=["POST"]
+)
 @login_required(role="Agent")
 def delete_category(id):
-    category_obj = Category.query.get_or_404(id)
+    category_obj = (
+        Category.query.get_or_404(id)
+    )
 
-    if request.method == "POST":
-        db.session.delete(category_obj)
-        db.session.commit()
+    linked_ticket = (
+        Ticket.query
+        .filter(
+            Ticket.category_id
+            == category_obj.id
+        )
+        .first()
+    )
 
-        socketio.emit("category_updated", {"message": "Category deleted by agent."})
-        emit_global_refresh("category_updated")
+    linked_faq = (
+        FAQ.query
+        .filter(
+            FAQ.category_id
+            == category_obj.id
+        )
+        .first()
+    )
 
-        flash("Category has been deleted.", "primary")
-        return redirect(url_for("agent.category"))
+    linked_article = (
+        KnowledgeArticle.query
+        .filter(
+            KnowledgeArticle.category_id
+            == category_obj.id
+        )
+        .first()
+    )
 
-    return redirect(url_for("agent.category"))
+    if (
+        linked_ticket
+        or linked_faq
+        or linked_article
+    ):
+        flash(
+            "This category cannot be deleted "
+            "because it is currently in use.",
+            "warning"
+        )
+
+        return redirect(
+            url_for("agent.category")
+        )
+
+    db.session.delete(
+        category_obj
+    )
+
+    if not safe_commit(
+        "Category deletion failed."
+    ):
+        flash(
+            "Category could not be deleted.",
+            "danger"
+        )
+
+        return redirect(
+            url_for("agent.category")
+        )
+
+    emit_global_refresh(
+        "category_updated"
+    )
+
+    flash(
+        "Category deleted successfully.",
+        "success"
+    )
+
+    return redirect(
+        url_for("agent.category")
+    )
 
 
 @agent_blueprint.route("/priorities", methods=["GET", "POST"])
@@ -1510,41 +2976,162 @@ def priority():
     return render_template("agent/priority.html", form=form, priorities=priorities)
 
 
-@agent_blueprint.route("/priority/update/<int:id>", methods=["GET", "POST"])
+@agent_blueprint.route(
+    "/priority/update/<int:id>",
+    methods=["GET", "POST"]
+)
 @login_required(role="Agent")
 def update_priority(id):
-    priority_obj = Priority.query.get_or_404(id)
+    priority_obj = (
+        Priority.query.get_or_404(id)
+    )
+
     form = PriorityForm()
 
+    if request.method == "GET":
+        form.priority.data = (
+            priority_obj.priority
+        )
+
     if form.validate_on_submit():
-        priority_obj.priority = form.priority.data
-        db.session.commit()
+        priority_name = (
+            form.priority.data or ""
+        ).strip()
 
-        socketio.emit("priority_updated", {"message": "Priority updated by agent."})
-        emit_global_refresh("priority_updated")
+        if not priority_name:
+            flash(
+                "Priority name is required.",
+                "warning"
+            )
 
-        flash("Priority has been updated.", "primary")
-        return redirect(url_for("agent.priority"))
+            return redirect(
+                url_for(
+                    "agent.update_priority",
+                    id=id
+                )
+            )
 
-    return render_template("agent/priority.html", form=form)
+        duplicate = (
+            Priority.query
+            .filter(
+                func.lower(
+                    Priority.priority
+                )
+                == priority_name.lower(),
+                Priority.id != priority_obj.id
+            )
+            .first()
+        )
+
+        if duplicate:
+            flash(
+                "A priority with this name "
+                "already exists.",
+                "warning"
+            )
+
+            return redirect(
+                url_for(
+                    "agent.update_priority",
+                    id=id
+                )
+            )
+
+        priority_obj.priority = (
+            priority_name
+        )
+
+        if not safe_commit(
+            "Priority update failed."
+        ):
+            flash(
+                "Priority could not be updated.",
+                "danger"
+            )
+
+            return redirect(
+                url_for("agent.priority")
+            )
+
+        emit_global_refresh(
+            "priority_updated"
+        )
+
+        flash(
+            "Priority updated successfully.",
+            "success"
+        )
+
+        return redirect(
+            url_for("agent.priority")
+        )
+
+    return render_template(
+        "agent/priority.html",
+        form=form,
+        priorities=Priority.query.all(),
+        editing_priority=priority_obj
+    )
 
 
-@agent_blueprint.route("/priority/delete/<int:id>", methods=["GET", "POST"])
+@agent_blueprint.route(
+    "/priority/delete/<int:id>",
+    methods=["POST"]
+)
 @login_required(role="Agent")
 def delete_priority(id):
-    priority_obj = Priority.query.get_or_404(id)
+    priority_obj = (
+        Priority.query.get_or_404(id)
+    )
 
-    if request.method == "POST":
-        db.session.delete(priority_obj)
-        db.session.commit()
+    linked_ticket = (
+        Ticket.query
+        .filter(
+            Ticket.priority_id
+            == priority_obj.id
+        )
+        .first()
+    )
 
-        socketio.emit("priority_updated", {"message": "Priority deleted by agent."})
-        emit_global_refresh("priority_updated")
+    if linked_ticket:
+        flash(
+            "This priority cannot be deleted "
+            "because it is assigned to tickets.",
+            "warning"
+        )
 
-        flash("Priority has been deleted.", "primary")
-        return redirect(url_for("agent.priority"))
+        return redirect(
+            url_for("agent.priority")
+        )
 
-    return redirect(url_for("agent.priority"))
+    db.session.delete(
+        priority_obj
+    )
+
+    if not safe_commit(
+        "Priority deletion failed."
+    ):
+        flash(
+            "Priority could not be deleted.",
+            "danger"
+        )
+
+        return redirect(
+            url_for("agent.priority")
+        )
+
+    emit_global_refresh(
+        "priority_updated"
+    )
+
+    flash(
+        "Priority deleted successfully.",
+        "success"
+    )
+
+    return redirect(
+        url_for("agent.priority")
+    )
 
 
 @agent_blueprint.route("/statuses", methods=["GET"])
@@ -1580,64 +3167,334 @@ def my_tickets():
 # PROFILE / PASSWORD
 # ============================================================
 
-@agent_blueprint.route("/my-profile", methods=["GET", "POST"])
+@agent_blueprint.route(
+    "/my-profile",
+    methods=["GET", "POST"]
+)
 @login_required(role="Agent")
 def my_profile():
-    user = User.query.filter(User.id == current_user.id).first()
+    user = db.session.get(
+        User,
+        current_user.id
+    )
+
+    if not user:
+        flash(
+            "Your account could not be found.",
+            "danger"
+        )
+
+        return redirect(
+            url_for("auth.logout")
+        )
+
     form = ChangeProfileForm()
 
+    if request.method == "GET":
+        form.name.data = user.name
+
     if form.validate_on_submit():
+        new_name = (
+            form.name.data or ""
+        ).strip()
+
+        if not new_name:
+            flash(
+                "Your name is required.",
+                "danger"
+            )
+
+            return redirect(
+                url_for("agent.my_profile")
+            )
+
+        user.name = new_name
+
         file = form.profile.data
 
         if file and file.filename:
-            _, ext = os.path.splitext(file.filename)
-            profile = secure_filename(str(user.id) + ext)
+            os.makedirs(
+                current_app.config["PROFILE_DIR"],
+                exist_ok=True
+            )
 
-            file.save(os.path.join(current_app.config["PROFILE_DIR"], profile))
+            original_filename = secure_filename(
+                file.filename
+            )
 
-            user.image = profile
+            _, extension = os.path.splitext(
+                original_filename
+            )
+
+            extension = extension.lower()
+
+            profile_filename = secure_filename(
+                f"{user.id}_{uuid.uuid4().hex}{extension}"
+            )
+
+            old_image = user.image
+
+            file.save(
+                os.path.join(
+                    current_app.config["PROFILE_DIR"],
+                    profile_filename
+                )
+            )
+
+            user.image = profile_filename
+
+            if (
+                old_image
+                and old_image != "default-profile.png"
+                and old_image != profile_filename
+            ):
+                old_image_path = os.path.join(
+                    current_app.config["PROFILE_DIR"],
+                    old_image
+                )
+
+                if os.path.isfile(old_image_path):
+                    try:
+                        os.remove(old_image_path)
+
+                    except OSError:
+                        current_app.logger.exception(
+                            "Could not remove old agent "
+                            "profile image for user_id=%s",
+                            user.id
+                        )
+
+        try:
             db.session.commit()
 
-            socketio.emit("profile_updated", {
-                "user_id": current_user.id,
+        except Exception:
+            db.session.rollback()
+
+            current_app.logger.exception(
+                "Agent profile update failed "
+                "for user_id=%s",
+                user.id
+            )
+
+            flash(
+                "Your profile could not be updated.",
+                "danger"
+            )
+
+            return redirect(
+                url_for("agent.my_profile")
+            )
+
+        socketio.emit(
+            "profile_updated",
+            {
+                "user_id": user.id,
+                "name": user.name,
+                "image": user.image,
                 "message": "Agent profile updated."
-            })
+            }
+        )
 
-            emit_global_refresh("profile_updated")
+        emit_global_refresh(
+            "profile_updated"
+        )
 
-            flash("Your profile has been changed.", "primary")
-            return redirect(url_for("agent.my_profile"))
+        flash(
+            "Your profile has been updated.",
+            "success"
+        )
 
-    return render_template("agent/my_profile.html", form=form, user=user)
+        return redirect(
+            url_for("agent.my_profile")
+        )
 
+    return render_template(
+        "agent/my_profile.html",
+        form=form,
+        user=user
+    )
 
-@agent_blueprint.route("/change-password", methods=["GET", "POST"])
+@agent_blueprint.route(
+    "/change-password",
+    methods=["GET", "POST"]
+)
 @login_required(role="Agent")
 def change_password():
-    user = User.query.filter(User.id == current_user.id).first()
+    user = db.session.get(
+        User,
+        current_user.id
+    )
+
+    if not user:
+        flash(
+            "Your account could not be found.",
+            "danger"
+        )
+
+        return redirect(
+            url_for("auth.logout")
+        )
+
     form = ChangePasswordForm()
 
     if form.validate_on_submit():
-        user.password = generate_password_hash(form.password.data)
-        log_system_event(
-            event_type="Password Changed",
-            severity="Info",
-            message=f"Password changed for {user.email}.",
-            user_id=user.id
+        if not check_password_hash(
+            user.password,
+            form.current_password.data
+        ):
+            flash(
+                "Current password is incorrect.",
+                "danger"
+            )
+
+            return redirect(
+                url_for("agent.change_password")
+            )
+
+        user.password = generate_password_hash(
+            form.password.data
         )
-        db.session.commit()
 
-        socketio.emit("password_updated", {
-            "user_id": current_user.id,
-            "message": "Agent password updated."
-        })
+        user.failed_login_attempts = 0
+        user.locked_until = None
 
-        emit_global_refresh("password_updated")
+        try:
+            db.session.commit()
 
-        flash("Your password has been changed.", "primary")
-        return redirect(url_for("agent.change_password"))
+        except Exception:
+            db.session.rollback()
 
-    return render_template("agent/change_password.html", form=form)
+            current_app.logger.exception(
+                "Agent password update failed "
+                "for user_id=%s",
+                user.id
+            )
+
+            flash(
+                "The password could not be updated.",
+                "danger"
+            )
+
+            return redirect(
+                url_for("agent.change_password")
+            )
+
+        flash(
+            "Password updated successfully.",
+            "success"
+        )
+
+        return redirect(
+            url_for("agent.change_password")
+        )
+
+    return render_template(
+        "agent/change_password.html",
+        form=form
+    )
+
+@agent_blueprint.route(
+    "/change-email",
+    methods=["GET", "POST"]
+)
+@login_required(role="Agent")
+def change_email():
+    form = ChangeEmailForm()
+
+    if request.method == "GET":
+        form.email.data = (
+            current_user.email
+        )
+
+    if form.validate_on_submit():
+        password = (
+            form.password.data or ""
+        )
+
+        if not check_password_hash(
+            current_user.password,
+            password
+        ):
+            flash(
+                "Password incorrect.",
+                "danger"
+            )
+
+            return redirect(
+                url_for(
+                    "agent.change_email"
+                )
+            )
+
+        new_email = (
+            form.email.data or ""
+        ).strip().lower()
+
+        existing = (
+            User.query
+            .filter(
+                func.lower(User.email)
+                == new_email,
+                User.id
+                != current_user.id
+            )
+            .first()
+        )
+
+        if existing:
+            flash(
+                "Email already exists.",
+                "danger"
+            )
+
+            return redirect(
+                url_for(
+                    "agent.change_email"
+                )
+            )
+
+        current_user.email = (
+            new_email
+        )
+
+        try:
+            db.session.commit()
+
+        except Exception:
+            db.session.rollback()
+
+            current_app.logger.exception(
+                "Agent email update failed "
+                "for user_id=%s",
+                current_user.id
+            )
+
+            flash(
+                "Your email could not be updated.",
+                "danger"
+            )
+
+            return redirect(
+                url_for(
+                    "agent.change_email"
+                )
+            )
+
+        flash(
+            "Email updated.",
+            "success"
+        )
+
+        return redirect(
+            url_for(
+                "agent.my_profile"
+            )
+        )
+
+    return render_template(
+        "agent/change_email.html",
+        form=form
+    )
 
 
 # ============================================================
@@ -1835,8 +3692,18 @@ def open_notification(nid):
     if notification.notification_type == "system_settings_updated":
         return redirect(url_for("agent.faq_library"))
 
-    if notification.url and notification.url != "#":
-        return redirect(notification.url)
+    if (
+        notification.url
+        and notification.url != "#"
+    ):
+        safe_url = str(
+            notification.url
+        ).strip()
+
+        if safe_url.startswith("/"):
+            return redirect(
+                safe_url
+            )
 
     return redirect(url_for("agent.notifications"))
 
@@ -2156,40 +4023,3 @@ def suggested_articles():
         recent_articles=recent_articles,
         recent_faqs=recent_faqs
     )
-
-# ============================================================
-# SOCKET ROOMS
-# ============================================================
-
-@socketio.on("join_ticket_room")
-def join_ticket_room(data):
-    try:
-        ticket_id = str(data.get("ticket_id"))
-
-        if not ticket_id:
-            return
-
-        room = f"ticket_{ticket_id}"
-        join_room(room)
-
-        print(f"✅ Agent joined ticket room: {room}")
-
-    except Exception as e:
-        print("AGENT SOCKET ROOM ERROR:", e)
-
-
-@socketio.on("join_notification_room")
-def join_notification_room(data):
-    try:
-        user_id = str(data.get("user_id"))
-
-        if not user_id:
-            return
-
-        room = f"user_{user_id}"
-        join_room(room)
-
-        print(f"✅ Agent joined user room: {room}")
-
-    except Exception as e:
-        print("AGENT USER ROOM ERROR:", e)

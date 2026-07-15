@@ -11,15 +11,6 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='vendor/froala-editor/css/froala_style.min.css') }}">
 
 <style>
-    .active-ticket-alert {
-        border: 1px solid #fbbf24;
-        background: #fffbeb;
-        color: #92400e;
-        border-radius: 12px;
-        padding: 16px;
-        margin-bottom: 16px;
-    }
-
     .ticket-status-pill {
         display: inline-block;
         padding: 5px 9px;
@@ -31,6 +22,7 @@
     }
 
     .ticket-status-open,
+    .ticket-status-active,
     .ticket-status-pending {
         background: #dcfce7;
         color: #166534;
@@ -46,77 +38,55 @@
         color: #1e40af;
     }
 
+    .ticket-status-ai-answered {
+        background: #ede9fe;
+        color: #5b21b6;
+    }
+
     .ticket-actions {
         display: flex;
         gap: 6px;
         flex-wrap: wrap;
     }
+
+    .chat-type-pill {
+        display: inline-block;
+        padding: 4px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 600;
+    }
+
+    .chat-type-ai {
+        background: #eef2ff;
+        color: #3730a3;
+    }
+
+    .chat-type-ticket {
+        background: #ecfdf5;
+        color: #065f46;
+    }
 </style>
 {% endblock %}
 
 {% block header %}
-    {% block title %}My Tickets{% endblock %}
+    {% block title %}My Chats{% endblock %}
 {% endblock %}
 
 {% block text %}
-    View, track, and continue your support tickets.
+    View AI chats, support tickets, and closed ticket reviews.
 {% endblock %}
 
 {% block button %}
-    {% if active_ticket %}
-<a href="{{ url_for('customer.chat_page') }}" class="btn btn-success btn-sm">
-    Continue Active Chat
+<a href="{{ url_for('customer.chat') }}" class="btn btn-primary btn-sm">
+    New Support Chat
 </a>
-    {% else %}
-<button type="button"
-        class="btn btn-primary btn-sm"
-        data-toggle="modal"
-        data-target="#createModal">
-    Create New
-</button>
-    {% endif %}
 {% endblock %}
 
 {% block content %}
 
 <div class="max-w-1000">
     {% include 'includes/alert.html' %}
-</div>
-
-<div class="max-w-1000">
-
-    {% if active_ticket %}
-    <div class="active-ticket-alert">
-
-        <div class="d-flex justify-content-between align-items-center flex-wrap">
-
-            <div>
-                <strong>Active support ticket:</strong>
-                Ticket #{{ active_ticket.number }}
-                is currently
-                <strong>{{ active_ticket.status.status }}</strong>.
-
-                <div class="small mt-1">
-                    You can only have one active support ticket at a time.
-                    Please continue or finish this ticket before creating another one.
-                </div>
-            </div>
-
-            <div class="mt-2 mt-md-0">
-                <a href="{{ url_for('customer.chat_page') }}" class="btn btn-dark btn-sm">
-                    Continue Chat
-                </a>
-
-                <a href="{{ url_for('customer.view_ticket', id=active_ticket.id) }}" class="btn btn-outline-dark btn-sm">
-                    View Details
-                </a>
-            </div>
-
-        </div>
-
-    </div>
-    {% endif %}
-
 </div>
 
 <div class="content-box mb-3 content-lighten max-w-1000">
@@ -135,16 +105,16 @@
 
         <thead>
             <tr>
-                <th data-field="number" data-valign="middle" data-halign="center">
+                <th data-field="type" data-filter-control="select">
+                    Type
+                </th>
+
+                <th data-field="id" data-valign="middle">
                     ID
                 </th>
 
-                <th data-field="subject" data-valign="middle">
-                    Subject
-                </th>
-
-                <th data-field="author" data-valign="middle" data-width="150">
-                    Author
+                <th data-field="title" data-valign="middle">
+                    Title
                 </th>
 
                 <th data-field="status" data-filter-control="select">
@@ -155,6 +125,10 @@
                     Assignee
                 </th>
 
+                <th data-field="updated">
+                    Updated
+                </th>
+
                 <th data-field="actions" data-valign="middle">
                     Actions
                 </th>
@@ -162,12 +136,65 @@
         </thead>
 
         <tbody>
+
+            {% for session in chat_sessions %}
+            {% if not session.ticket_id %}
+            <tr>
+                <td>
+                    <span class="chat-type-pill chat-type-ai">AI Chat</span>
+                </td>
+
+                <td>
+                    CHAT-{{ session.id }}
+                </td>
+
+                <td>
+                    {{ session.title or session.issue_type or 'IT Support Chat' }}
+                </td>
+
+                <td>
+                    {% set session_status = session.status or 'Active' %}
+                    <span class="ticket-status-pill ticket-status-{{ session_status|lower|replace(' ', '-') }}">
+                        {{ session_status }}
+                    </span>
+                </td>
+
+                <td>
+                    <span class="text-muted">AI / Self-service</span>
+                </td>
+
+                <td>
+                    {{ session.updated_at.strftime("%d %b %Y %H:%M") if session.updated_at else "" }}
+                </td>
+
+                <td>
+                    <div class="ticket-actions">
+                        <a href="{{ url_for('customer.view_chat', session_id=session.id) }}"
+                           class="btn btn-secondary btn-sm">
+                            View Chat
+                        </a>
+
+                        <a href="{{ url_for('customer.delete_chat_session_page', session_id=session.id) }}"
+                           class="btn btn-danger btn-sm"
+                           onclick="return confirm('Delete this AI chat history?');">
+                            Delete
+                        </a>
+                    </div>
+                </td>
+            </tr>
+            {% endif %}
+            {% endfor %}
+
             {% for row in tickets %}
             <tr id="tr-id-{{ row.id }}">
 
                 <td>
+                    <span class="chat-type-pill chat-type-ticket">Ticket</span>
+                </td>
+
+                <td>
                     <a href="{{ url_for('customer.view_ticket', id=row.id) }}">
-                        {{ row.number }}
+                        #{{ row.number }}
                     </a>
                 </td>
 
@@ -177,10 +204,6 @@
                     {% else %}
                     {{ row.subject }}
                     {% endif %}
-                </td>
-
-                <td>
-                    {{ row.author.name }}
                 </td>
 
                 <td>
@@ -208,15 +231,19 @@
                 </td>
 
                 <td>
+                    {{ row.updated_at.strftime("%d %b %Y %H:%M") if row.updated_at else "" }}
+                </td>
+
+                <td>
                     <div class="ticket-actions">
 
                         <a href="{{ url_for('customer.view_ticket', id=row.id) }}"
                            class="btn btn-secondary btn-sm">
-                            View
+                            View Ticket
                         </a>
 
                         {% if row.status and row.status.status != 'Closed' %}
-                        <a href="{{ url_for('customer.chat_page') }}"
+                        <a href="{{ url_for('customer.chat') }}"
                            class="btn btn-success btn-sm">
                             Continue Chat
                         </a>
@@ -238,150 +265,16 @@
 
 </div>
 
-{% if not active_ticket %}
-<div class="modal fade"
-     id="createModal"
-     tabindex="-1"
-     aria-labelledby="createModalLabel"
-     aria-hidden="true">
-
-    <div class="modal-dialog">
-
-        <div class="modal-content">
-
-            <div class="modal-header">
-
-                <h5 class="modal-title" id="createModalLabel">
-                    Create New Ticket
-                </h5>
-
-                <button type="button"
-                        class="close"
-                        data-dismiss="modal"
-                        aria-label="Close">
-                    <span aria-hidden="true">&times;</span>
-                </button>
-
-            </div>
-
-            <div class="modal-body">
-
-                <form action="{{ url_for('customer.create_ticket') }}"
-                      method="POST"
-                      enctype="multipart/form-data">
-
-                    {{ form.csrf_token }}
-
-                    <div class="form-group">
-                        {{ render_input(form.subject, "Subject", "Subject is required") }}
-                    </div>
-
-                    <div class="form-group">
-                        {{ render_select(form.category, "Category is required") }}
-                    </div>
-
-                    <div class="form-group">
-                        {{ render_input(form.body, "Write a message...", "Message is required", rows="5") }}
-                    </div>
-
-                    <div class="mb-3">
-                        <small class="text-muted">
-                            Allowed files: PDF, DOCX, JPEG, JPG, PNG, GIF.
-                            Maximum file size: 4 MB.
-                        </small>
-                    </div>
-
-                    <div class="input-group mb-3">
-
-                        <div class="custom-file">
-                            {{ render_upload(form.attachment) }}
-                            <label class="custom-file-label" for="attachment">
-                                Choose file
-                            </label>
-                        </div>
-
-                        <div class="input-group-append">
-                            <span class="input-group-text">
-                                Upload
-                            </span>
-                        </div>
-
-                    </div>
-
-                    <button type="submit" class="btn btn-primary">
-                        Submit
-                    </button>
-
-                </form>
-
-            </div>
-
-        </div>
-
-    </div>
-
-</div>
-{% endif %}
-
 {% endblock %}
 
 {% block script %}
 {{ super() }}
 <script src="{{ url_for('static', filename='vendor/bootstrap-table/bootstrap-table.min.js') }}"></script>
 <script src="{{ url_for('static', filename='vendor/bootstrap-table/extensions/filter-control/bootstrap-table-filter-control.min.js') }}"></script>
-<script src="{{ url_for('static', filename='vendor/froala-editor/js/froala_editor.pkgd.min.js') }}"></script>
 
 <script>
     $(document).ready(function () {
-
-        if (document.querySelector('textarea#body')) {
-            new FroalaEditor('textarea#body', {
-                toolbarButtons: [
-                    'fontFamily',
-                    '|',
-                    'bold',
-                    'italic',
-                    'underline',
-                    'undo',
-                    'redo',
-                    'codeView'
-                ],
-                fontFamilySelection: true,
-                pluginsEnabled: ['fontFamily']
-            });
-        }
-
-        $('#attachment').on('change', function () {
-            var fileName = $(this).val();
-            $(this).next('.custom-file-label').html(fileName);
-
-            var file = this.files && this.files[0];
-
-            if (!file) {
-                return;
-            }
-
-            var maxFileSize = 4 * 1024 * 1024;
-
-            if (file.size > maxFileSize) {
-                this.setCustomValidity('Maximum file size exceeded');
-                this.reportValidity();
-                return;
-            } else {
-                this.setCustomValidity('');
-            }
-
-            var ext = $(this).val().split('.').pop().toLowerCase();
-
-            if ($.inArray(ext, ['pdf', 'docx', 'png', 'jpg', 'jpeg', 'gif']) === -1) {
-                alert('This file extension is not allowed');
-                this.value = '';
-                $(this).next('.custom-file-label').html('Choose file');
-            }
-        });
-
         $('#ticketTable').bootstrapTable();
-
     });
 </script>
 {% endblock %}

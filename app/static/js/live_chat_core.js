@@ -26,18 +26,12 @@ window.LiveChatCore = (function () {
 
     function joinTicketRoom(ticketId) {
         if (!ticketId) return;
-
-        initSocket().emit("join_ticket_room", {
-            ticket_id: String(ticketId)
-        });
+        initSocket().emit("join_ticket_room", { ticket_id: String(ticketId) });
     }
 
     function joinNotificationRoom(userId) {
         if (!userId) return;
-
-        initSocket().emit("join_notification_room", {
-            user_id: String(userId)
-        });
+        initSocket().emit("join_notification_room", { user_id: String(userId) });
     }
 
     function escapeHtml(value) {
@@ -51,6 +45,7 @@ window.LiveChatCore = (function () {
             .replace(/'/g, "&#039;");
     }
 
+
     function formatTime(value) {
         if (!value) {
             return new Date().toLocaleTimeString([], {
@@ -60,7 +55,6 @@ window.LiveChatCore = (function () {
         }
 
         const parsed = new Date(value);
-
         if (isNaN(parsed.getTime())) return String(value);
 
         return parsed.toLocaleTimeString([], {
@@ -69,14 +63,38 @@ window.LiveChatCore = (function () {
         });
     }
 
-    function scrollBottom(container) {
-        if (!container) return;
-        container.scrollTop = container.scrollHeight;
+    function scrollBottom(
+        container,
+        behavior = "auto"
+    ) {
+        if (!container) {
+            return;
+        }
+
+        window.requestAnimationFrame(
+            function () {
+                if (
+                    typeof container.scrollTo
+                    === "function"
+                ) {
+                    container.scrollTo({
+                        top:
+                            container.scrollHeight,
+                        behavior:
+                            behavior === "smooth"
+                                ? "smooth"
+                                : "auto"
+                    });
+                } else {
+                    container.scrollTop =
+                        container.scrollHeight;
+                }
+            }
+        );
     }
 
     function makeEventKey(prefix, data) {
         if (!data) return null;
-
         if (data.id) return `${prefix}_id_${data.id}`;
 
         if (data.ticket_id && data.comment_id) {
@@ -98,7 +116,6 @@ window.LiveChatCore = (function () {
 
     function hasRendered(key) {
         if (!key) return false;
-
         if (renderedEvents.has(key)) return true;
 
         renderedEvents.add(key);
@@ -111,7 +128,6 @@ window.LiveChatCore = (function () {
 
     function addChatBubble(options) {
         const container = options.container;
-
         if (!container) return null;
 
         const side = options.side || "left";
@@ -162,7 +178,6 @@ window.LiveChatCore = (function () {
         container.appendChild(row);
 
         scrollBottom(container);
-
         return row;
     }
 
@@ -201,41 +216,147 @@ window.LiveChatCore = (function () {
             return {
                 ok: false,
                 status: 500,
-                data: {
-                    ok: false
-                }
+                data: { ok: false }
             };
         }
     }
 
     function fetchMe() {
-        return api("/customer/api/me", {
-            method: "GET"
-        });
+        return api("/customer/api/me", { method: "GET" });
     }
 
     function fetchActiveTicket() {
-        return api("/customer/api/ticket/active", {
-            method: "GET"
-        });
+        return api("/customer/api/ticket/active", { method: "GET" });
     }
 
     function fetchTicketStatus(ticketId) {
-        return api(`/customer/api/ticket/status/${ticketId}`, {
-            method: "GET"
-        });
+        return api(`/customer/api/ticket/status/${ticketId}`, { method: "GET" });
     }
 
     function fetchTicketComments(ticketId) {
-        return api(`/customer/api/ticket/comments/${ticketId}`, {
+        return api(`/customer/api/ticket/comments/${ticketId}`, { method: "GET" });
+    }
+
+    function fetchChatHistory() {
+        return api("/customer/api/chat/history", { method: "GET" });
+    }
+
+    // ============================================================
+    // CHATGPT-STYLE CHAT SESSION API
+    // ============================================================
+
+    function rateChatSession(sessionId, rating, feedback = "") {
+        return api(`/customer/api/chat/session/${sessionId}/rate`, {
+            method: "POST",
+            body: JSON.stringify({
+                rating: rating,
+                feedback: feedback
+            })
+        });
+    }
+    function createChatSession(options = {}) {
+        return api("/customer/api/chat/session/new", {
+            method: "POST",
+            body: JSON.stringify({
+                title: options.title || "New IT Support Chat",
+                issue_type: options.issue_type || ""
+            })
+        });
+    }
+
+    function fetchChatSessions(search = "") {
+        const query = search ? `?search=${encodeURIComponent(search)}` : "";
+
+        return api(`/customer/api/chat/sessions${query}`, {
             method: "GET"
         });
     }
 
-    function fetchChatHistory() {
-        return api("/customer/api/chat/history", {
+    function fetchChatSession(sessionId) {
+        return api(`/customer/api/chat/session/${sessionId}`, {
             method: "GET"
         });
+    }
+
+    function deleteChatSession(sessionId) {
+        return api(`/customer/api/chat/session/${sessionId}/delete`, {
+            method: "POST"
+        });
+    }
+
+    function saveChatSessionMessage(sessionId, options = {}) {
+        return api(`/customer/api/chat/session/${sessionId}/message`, {
+            method: "POST",
+            body: JSON.stringify({
+                role: options.role || "system",
+                message: options.message || "",
+                ticket_id: options.ticket_id || null,
+                resolution_status: options.resolution_status || "Active",
+                faq_matched: options.faq_matched === true,
+                ai_used: options.ai_used === true,
+                escalated: options.escalated === true
+            })
+        });
+    }
+
+    function getTriageAnswer(sessionId, options = {}) {
+        return api(`/customer/api/chat/session/${sessionId}/triage-answer`, {
+            method: "POST",
+            body: JSON.stringify({
+                triage_summary: options.triage_summary || "",
+                issue_type: options.issue_type || "",
+                language: options.language || "en"
+            })
+        });
+    }
+
+    function updateTriageProgress(
+        sessionId,
+        options = {}
+    ) {
+        return api(
+            `/customer/api/chat/session/${sessionId}/triage-progress`,
+            {
+                method: "POST",
+                body: JSON.stringify({
+                    issue_type:
+                        options.issue_type || "",
+                    triage_step:
+                        Number(
+                            options.triage_step || 0
+                        ),
+                    triage_data:
+                        options.triage_data || {},
+                    current_stage:
+                        options.current_stage || "triage"
+                })
+            }
+        );
+    }
+
+    function updateChatSessionState(
+        sessionId,
+        currentStage
+    ) {
+        return api(
+            `/customer/api/chat/session/${sessionId}/state`,
+            {
+                method: "POST",
+                body: JSON.stringify({
+                    current_stage:
+                        currentStage || "triage"
+                })
+            }
+        );
+    }
+
+    // Old ticket-history APIs still supported
+    function fetchSupportRequests() {
+        return api("/customer/api/support-requests", { method: "GET" });
+    }
+
+    function fetchSupportRequest(ticketId) {
+        return api(`/customer/api/support-request/${ticketId}`, { method: "GET" });
     }
 
     function sendAiMessage(message, options = {}) {
@@ -243,27 +364,33 @@ window.LiveChatCore = (function () {
             method: "POST",
             body: JSON.stringify({
                 message: message,
+                session_id: options.session_id || null,
                 ...options
             })
         });
     }
 
-    function sendResolutionResult(solved, sourceType, originalMessage) {
+    function sendResolutionResult(solved, sourceType, originalMessage, options = {}) {
         return api("/customer/api/chat/resolution", {
             method: "POST",
             body: JSON.stringify({
                 solved: solved === true,
                 source_type: sourceType || "",
-                original_message: originalMessage || ""
+                original_message: originalMessage || "",
+                session_id: options.session_id || null
             })
         });
     }
 
-    function escalateSupport(message) {
+    function escalateSupport(message, options = {}) {
         return api("/customer/api/escalate", {
             method: "POST",
             body: JSON.stringify({
-                message: message || "Customer requested support."
+                message: message || "Customer requested support.",
+                subject: options.subject || "",
+                category: options.category || "",
+                priority: options.priority || "",
+                session_id: options.session_id || null
             })
         });
     }
@@ -271,28 +398,20 @@ window.LiveChatCore = (function () {
     function sendTicketComment(ticketId, message) {
         return api(`/customer/api/ticket/comment/${ticketId}`, {
             method: "POST",
-            body: JSON.stringify({
-                message: message
-            })
+            body: JSON.stringify({ message: message })
         });
     }
 
     function reopenTicket(ticketId) {
-        return api(`/customer/api/ticket/reopen/${ticketId}`, {
-            method: "POST"
-        });
+        return api(`/customer/api/ticket/reopen/${ticketId}`, { method: "POST" });
     }
 
     function confirmSolved(ticketId) {
-        return api(`/customer/api/ticket/confirm-solved/${ticketId}`, {
-            method: "POST"
-        });
+        return api(`/customer/api/ticket/confirm-solved/${ticketId}`, { method: "POST" });
     }
 
     function clearChatHistory() {
-        return api("/customer/api/chat/clear", {
-            method: "POST"
-        });
+        return api("/customer/api/chat/clear", { method: "POST" });
     }
 
     function saveSelectedFaq(question, answer, originalMessage) {
@@ -337,7 +456,6 @@ window.LiveChatCore = (function () {
 
     function renderCommentEvent(container, data, currentUserId) {
         const event = normaliseCommentEvent(data);
-
         if (!event || !event.message) return;
 
         const key = makeEventKey("comment", {
@@ -357,9 +475,7 @@ window.LiveChatCore = (function () {
             String(event.message || "").includes("Current AI / FAQ Conversation") ||
             String(event.message || "").includes("Previous AI / FAQ Conversation");
 
-        if (isSupportContext && isMine) {
-            return;
-        }
+        if (isSupportContext && isMine) return;
 
         if (isSupportContext) {
             addChatBubble({
@@ -391,7 +507,6 @@ window.LiveChatCore = (function () {
         if (!chat || !chat.message) return;
 
         const key = makeEventKey("chat", chat);
-
         if (hasRendered(key)) return;
 
         const role = String(chat.role || "").toLowerCase();
@@ -420,9 +535,17 @@ window.LiveChatCore = (function () {
         });
     }
 
+    function rateTicket(ticketId, options = {}) {
+        return api(`/customer/api/ticket/rate/${ticketId}`, {
+            method: "POST",
+            body: JSON.stringify({
+                rating: options.rating,
+                feedback: options.feedback || ""
+            })
+        });
+    }
     function updateBadge(id, count) {
         const badge = document.getElementById(id);
-
         if (!badge) return;
 
         const number = Number(count || 0);
@@ -433,19 +556,15 @@ window.LiveChatCore = (function () {
 
     function incrementBadge(id, amount = 1) {
         const badge = document.getElementById(id);
-
         if (!badge) return;
 
         const current = Number((badge.innerText || "0").trim()) || 0;
-
         updateBadge(id, current + amount);
     }
 
     function requestSoftRefresh(reason) {
         const event = new CustomEvent("livechat:soft-refresh", {
-            detail: {
-                reason: reason || "updated"
-            }
+            detail: { reason: reason || "updated" }
         });
 
         window.dispatchEvent(event);
@@ -474,6 +593,20 @@ window.LiveChatCore = (function () {
         fetchTicketStatus,
         fetchTicketComments,
         fetchChatHistory,
+        updateTriageProgress,
+        updateChatSessionState,
+
+        createChatSession,
+        fetchChatSessions,
+        fetchChatSession,
+        deleteChatSession,
+        saveChatSessionMessage,
+        getTriageAnswer,
+        rateChatSession,
+        rateTicket,
+
+        fetchSupportRequests,
+        fetchSupportRequest,
         sendAiMessage,
         sendResolutionResult,
         escalateSupport,

@@ -2,7 +2,7 @@ import os
 from openai import OpenAI
 
 
-def ask_chatgpt(message, knowledge_context=""):
+def ask_chatgpt(message, knowledge_context="", triage_context="", faq_context=""):
     try:
         api_key = os.getenv("OPENAI_API_KEY")
 
@@ -15,19 +15,29 @@ def ask_chatgpt(message, knowledge_context=""):
         client = OpenAI(api_key=api_key)
 
         system_prompt = f"""
-You are a customer support assistant.
+You are an AI-powered IT Service Desk assistant.
 
-Use the supplied knowledge base first.
+Use this order:
+1. Use FAQ context first.
+2. Use Knowledge Base context second.
+3. If no direct match is found, use general IT troubleshooting knowledge.
+4. If the issue needs account access, security investigation, admin permission, or hardware replacement, recommend creating a support ticket.
 
-Knowledge Base:
+Triage Context:
+{triage_context}
+
+FAQ Context:
+{faq_context}
+
+Knowledge Base Context:
 {knowledge_context}
 
-If the answer exists in the knowledge base,
-answer using that information.
-
-If not, answer normally.
-
-Keep answers concise and helpful.
+Response rules:
+- Give practical step-by-step troubleshooting.
+- Keep the answer clear and professional.
+- Do not invent company-specific policies.
+- Do not claim you performed system actions.
+- End by asking whether this solved the issue.
 """.strip()
 
         response = client.chat.completions.create(
@@ -43,7 +53,7 @@ Keep answers concise and helpful.
                 }
             ],
             temperature=0.3,
-            max_tokens=500
+            max_tokens=600
         )
 
         answer = response.choices[0].message.content or ""

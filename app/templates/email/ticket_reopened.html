@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Ticket Reopened</title>
+</head>
+
+<body style="
+    margin:0;
+    padding:30px;
+    background:#f5f7fa;
+    font-family:Arial, Helvetica, sans-serif;
+    color:#1f2937;
+">
+
+    <div style="
+    max-width:650px;
+    margin:0 auto;
+    background:#ffffff;
+    border-radius:12px;
+    padding:35px;
+    box-shadow:0 4px 18px rgba(0,0,0,0.06);
+">
+
+        <h2 style="
+        margin-top:0;
+        color:#d97706;
+    ">
+            Support Ticket Reopened
+        </h2>
+
+        <p>
+            Hello {{ user.name }},
+        </p>
+
+        <p>
+            Your support ticket has been reopened successfully.
+            Our support team will continue investigating your issue.
+        </p>
+
+        <div style="
+        background:#f8fafc;
+        border:1px solid #e5e7eb;
+        border-radius:10px;
+        padding:18px;
+        margin:22px 0;
+    ">
+
+            <p style="margin:0 0 8px 0;">
+                <strong>Ticket Number:</strong>
+                {{ ticket.number }}
+            </p>
+
+            <p style="margin:0 0 8px 0;">
+                <strong>Subject:</strong>
+                {{ ticket.subject }}
+            </p>
+
+            <p style="margin:0;">
+                <strong>Status:</strong>
+                {{ ticket.status.status if ticket.status else "Pending" }}
+            </p>
+
+        </div>
+
+        <p>
+            You may continue the conversation from your ticket page.
+        </p>
+
+        <p style="margin:25px 0;">
+            <a href="{{ url_for(
+            'customer.view_ticket',
+            id=ticket.id,
+            _external=True
+        ) }}"
+               style="
+               display:inline-block;
+               padding:12px 20px;
+               background:#2563eb;
+               color:#ffffff;
+               text-decoration:none;
+               border-radius:8px;
+               font-weight:bold;
+           ">
+                View Reopened Ticket
+            </a>
+        </p>
+
+        <p style="
+        color:#6b7280;
+        font-size:13px;
+        margin-top:30px;
+    ">
+            This is an automated service-desk notification.
+        </p>
+
+        <p style="margin-bottom:0;">
+            Support Team
+        </p>
+
+    </div>
+
+</body>
+</html>

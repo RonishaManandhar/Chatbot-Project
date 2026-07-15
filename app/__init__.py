@@ -4,19 +4,20 @@ from flask import Flask, redirect, url_for
 from app.exts import db, login_manager, mail, csrf, migrate
 from app.socketio_ext import socketio
 from app.models import User, Ticket, Category, Priority, Status, Comment, Notification
-from app.utils.seed import seed_faq
-
+from app.utils.seed import seed_it_service_desk
 import unittest
 import coverage
 import os
 
-def create_app():
+def create_app(config_object=None):
 	app = Flask(__name__)
 	# Configuration
-	if app.config.get('ENV') == 'development' or app.config.get('FLASK_ENV') == 'development':
-		app.config.from_object('config.DevelopmentConfig')
+	if config_object is not None:
+		app.config.from_object(config_object)
+	elif os.getenv("FLASK_ENV", "development").lower() == "production":
+		app.config.from_object("config.ProductionConfig")
 	else:
-		app.config.from_object('config.ProductionConfig')
+		app.config.from_object("config.DevelopmentConfig")
 
 	db.init_app(app)
 	login_manager.init_app(app)
@@ -25,6 +26,9 @@ def create_app():
 	mail.init_app(app)
 	csrf.init_app(app)
 	socketio.init_app(app)
+
+	# Import once so the shared Socket.IO handlers are registered.
+	from app import socket_events  # noqa: F401
 
 	from app.auth.views import auth_blueprint
 	from app.admin.views import admin_blueprint
@@ -66,10 +70,10 @@ def create_app():
 		cov.html_report(directory=covdir)
 		cov.erase()
 
-	@app.cli.command("seed_faq")
-	def seed_faq_command():
-		"""Seed default FAQ entries."""
-		seed_faq()
+	@app.cli.command("seed_it")
+	def seed_it_command():
+		"""Seed IT Service Desk data."""
+		seed_it_service_desk(reset=True)
 
 	@app.shell_context_processor
 	def make_shell_context():

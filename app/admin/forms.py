@@ -1,5 +1,5 @@
 from flask_wtf import FlaskForm
-from flask_wtf.file import FileField, FileRequired, FileAllowed
+from flask_wtf.file import FileField, FileAllowed
 
 from wtforms import StringField, EmailField, PasswordField, SelectField, TextAreaField, SubmitField
 from wtforms.validators import DataRequired, ValidationError, Length, EqualTo, Email, Optional
@@ -80,14 +80,55 @@ class UpdateRoleForm(FlaskForm):
 		self.role.choices = [("", "-- Please select role --"), ("Administrator", "Administrator"), ("Agent", "Agent")]
 
 class ChangeProfileForm(FlaskForm):
-	profile = FileField('Change Profile',
-		validators=[FileRequired(), FileAllowed(['png', 'jpg', 'jpeg'], 'This file extension is not allowed')])
+    name = StringField(
+        "Full Name",
+        validators=[
+            DataRequired(),
+            Length(min=2, max=255)
+        ]
+    )
 
-class ChangePasswordForm(FlaskForm):
-	password = PasswordField('New Password',
-		validators=[DataRequired(), Length(min=6, max=32)])
-	confirm_password = PasswordField('Confirm Password',
-		validators=[DataRequired(), EqualTo('password')])
+    profile = FileField(
+        "Profile Picture",
+        validators=[
+            Optional(),
+            FileAllowed(
+                ["png", "jpg", "jpeg"],
+                "Only PNG, JPG, and JPEG images are allowed."
+            )
+        ]
+    )
+
+class ChangePasswordForm(
+    FlaskForm
+):
+    current_password = PasswordField(
+        "Current Password",
+        validators=[
+            DataRequired()
+        ]
+    )
+
+    password = PasswordField(
+        "New Password",
+        validators=[
+            DataRequired(),
+            Length(
+                min=6,
+                max=32
+            )
+        ]
+    )
+
+    confirm_password = PasswordField(
+        "Confirm Password",
+        validators=[
+            DataRequired(),
+            EqualTo(
+                "password"
+            )
+        ]
+    )
 
 class KnowledgeArticleForm(FlaskForm):
     title = StringField(
@@ -161,3 +202,21 @@ class FAQForm(FlaskForm):
 			(category.id, category.category)
 			for category in Category.query.all()
 		]
+		
+class ChangeEmailForm(
+    FlaskForm
+):
+    email = StringField(
+        "Email",
+        validators=[
+            DataRequired(),
+            Email()
+        ]
+    )
+
+    password = PasswordField(
+        "Password",
+        validators=[
+            DataRequired()
+        ]
+    )

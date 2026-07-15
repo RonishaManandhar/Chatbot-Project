@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+</head>
+
+<body style="
+    background:#f4f6f9;
+    font-family:Arial;
+    padding:30px;
+">
+
+    <div style="
+    max-width:600px;
+    background:white;
+    margin:auto;
+    padding:35px;
+    border-radius:12px;
+">
+
+        <h2 style="color:#2563eb;">
+            Verify Your Email Address
+        </h2>
+
+        <p>Hello {{ user.name }},</p>
+
+        <p>
+            Thank you for creating an account.
+        </p>
+
+        <p>
+            Please use the following verification code:
+        </p>
+
+        <div style="
+        font-size:35px;
+        font-weight:bold;
+        letter-spacing:8px;
+        text-align:center;
+        padding:20px;
+        background:#f3f4f6;
+        border-radius:10px;
+        margin:30px 0;
+    ">
+            {{ code }}
+        </div>
+
+        <p>
+            This code expires in
+            <strong>10 minutes</strong>.
+        </p>
+
+        <hr>
+
+        <p style="
+        color:#6b7280;
+        font-size:13px;
+    ">
+            If you did not create this account,
+            please ignore this email.
+        </p>
+
+        <p>
+            Support Team
+        </p>
+
+    </div>
+
+</body>
+</html>

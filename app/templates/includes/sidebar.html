@@ -53,7 +53,7 @@
                             <li>
                                 <a href="{{ url_for('admin.active_chats') }}" class="list-link">
                                     <span class="list-icon"><i class="fa fa-comments"></i></span>
-                                    Active Chats
+                                    Live Support Sessions
                                     <span id="sidebarActiveChatsBadge"
                                           class="badge badge-pill badge-primary float-right"
                                           style="{% if active_chat_count == 0 %}display:none;{% endif %}">
@@ -77,7 +77,7 @@
                             <li>
                                 <a href="{{ url_for('admin.agent_reports') }}" class="list-link">
                                     <span class="list-icon"><i class="fa fa-exclamation-triangle"></i></span>
-                                    Agent Reports
+                                    Support Reports
                                     <span id="sidebarAgentReportsBadge"
                                           class="badge badge-pill badge-danger float-right"
                                           style="{% if agent_report_count == 0 %}display:none;{% endif %}">
@@ -96,11 +96,17 @@
                         </ul>
                     </li>
 
-                    <!-- AI TRAINING & REVIEW -->
+                    <!-- AI SERVICE DESK REVIEW -->
                     <li>
-                        <a href="javascript:void(0)" class="list-link link-arrow">
-                            <span class="list-icon"><i class="fa fa-shield"></i></span>
-                            AI Training & Review
+                        <a href="javascript:void(0)"
+                           class="list-link link-arrow">
+
+                            <span class="list-icon">
+                                <i class="fa fa-shield"></i>
+                            </span>
+
+                            AI Service Desk Review
+
                             <span id="sidebarAiTrainingBadge"
                                   class="badge badge-pill badge-danger float-right"
                                   style="{% if ai_training_total_count == 0 %}display:none;{% endif %}">
@@ -111,45 +117,27 @@
                         <ul class="list-unstyled list-hidden">
 
                             <li>
-                                <a href="{{ url_for('admin.chat_logs') }}" class="list-link">
-                                    <span class="list-icon"><i class="fa fa-list-alt"></i></span>
-                                    Review Queue
+                                <a href="{{ url_for('admin.ai_review_center') }}"
+                                   class="list-link">
+
+                                    <span class="list-icon">
+                                        <i class="fa fa-search"></i>
+                                    </span>
+
+                                    AI Review Center
+
                                     <span id="sidebarAiReviewBadge"
                                           class="badge badge-pill badge-warning float-right"
-                                          style="{% if ai_review_count == 0 %}display:none;{% endif %}">
-                                        {{ ai_review_count }}
+                                          style="{% if ai_training_total_count == 0 %}display:none;{% endif %}">
+                                        {{ ai_training_total_count }}
                                     </span>
                                 </a>
                             </li>
 
                             <li>
-                                <a href="{{ url_for('admin.training_cases') }}" class="list-link">
-                                    <span class="list-icon"><i class="fa fa-exclamation-triangle"></i></span>
-                                    Training Cases
-                                    <span id="sidebarAiTrainingCasesBadge"
-                                          class="badge badge-pill badge-danger float-right"
-                                          style="{% if ai_training_case_count == 0 %}display:none;{% endif %}">
-                                        {{ ai_training_case_count }}
-                                    </span>
-                                </a>
-                            </li>
-
-                            <li>
-                                <a href="{{ url_for('admin.repeated_questions') }}" class="list-link">
-                                    <span class="list-icon"><i class="fa fa-repeat"></i></span>
-                                    Repeated Questions
-                                    <span id="sidebarRepeatedQuestionsBadge"
-                                          class="badge badge-pill badge-info float-right"
-                                          style="{% if ai_repeated_question_count == 0 %}display:none;{% endif %}">
-                                        {{ ai_repeated_question_count }}
-                                    </span>
-                                </a>
-                            </li>
-
-                            <li>
-                                <a href="{{ url_for('admin.ai_learning_dashboard') }}" class="list-link">
-                                    <span class="list-icon"><i class="fa fa-line-chart"></i></span>
-                                    AI Learning Dashboard
+                                <a href="{{ url_for('admin.email_logs')  }}" class="list-link">
+                                    <span class="list-icon"><i class="fa fa-users"></i></span>
+                                    Email Logs
                                 </a>
                             </li>
 
@@ -173,14 +161,14 @@
                             <li>
                                 <a href="{{ url_for('admin.knowledge_base') }}" class="list-link">
                                     <span class="list-icon"><i class="fa fa-question-circle"></i></span>
-                                    FAQs
+                                    IT Support FAQs
                                 </a>
                             </li>
 
                             <li>
                                 <a href="{{ url_for('admin.knowledge_articles') }}" class="list-link">
                                     <span class="list-icon"><i class="fa fa-database"></i></span>
-                                    Knowledge Base Articles
+                                    IT Knowledge Articles
                                     <span id="sidebarInactiveArticlesBadge"
                                           class="badge badge-pill badge-warning float-right"
                                           style="{% if inactive_article_count == 0 %}display:none;{% endif %}">
@@ -192,7 +180,7 @@
                             <li>
                                 <a href="{{ url_for('admin.faq_suggestions') }}" class="list-link">
                                     <span class="list-icon"><i class="fa fa-lightbulb-o"></i></span>
-                                    FAQ Suggestions
+                                    AI Suggested Content
                                     <span id="sidebarFaqSuggestionsBadge"
                                           class="badge badge-pill badge-danger float-right"
                                           style="{% if faq_suggestion_count == 0 %}display:none;{% endif %}">
@@ -204,7 +192,7 @@
                             <li>
                                 <a href="{{ url_for('admin.knowledge_analytics') }}" class="list-link">
                                     <span class="list-icon"><i class="fa fa-bar-chart"></i></span>
-                                    Knowledge Analytics
+                                    Knowledge Usage Analytics
                                 </a>
                             </li>
 
@@ -215,7 +203,7 @@
                     <li>
                         <a href="javascript:void(0)" class="list-link link-arrow">
                             <span class="list-icon"><i class="fa fa-code"></i></span>
-                            Agent Knowledge
+                            Support Knowledge
                             <span id="sidebarAgentKnowledgeBadge"
                                   class="badge badge-pill badge-danger float-right"
                                   style="{% if agent_knowledge_total_count == 0 %}display:none;{% endif %}">
@@ -228,14 +216,14 @@
                             <li>
                                 <a href="{{ url_for('admin.closed_ticket_knowledge') }}" class="list-link">
                                     <span class="list-icon"><i class="fa fa-check-square-o"></i></span>
-                                    Closed Ticket Knowledge
+                                    Resolved Ticket Library
                                 </a>
                             </li>
 
                             <li>
                                 <a href="{{ url_for('admin.agent_solution_library') }}" class="list-link">
                                     <span class="list-icon"><i class="fa fa-lightbulb-o"></i></span>
-                                    Agent Solution Library
+                                    Internal Solution Library
                                     <span id="sidebarPendingAgentSolutionsBadge"
                                           class="badge badge-pill badge-warning float-right"
                                           style="{% if pending_agent_solution_count == 0 %}display:none;{% endif %}">
@@ -267,7 +255,7 @@
                             <li>
                                 <a href="{{ url_for('admin.analytics') }}" class="list-link">
                                     <span class="list-icon"><i class="fa fa-line-chart"></i></span>
-                                    Analytics Dashboard
+                                    Service Desk Analytics
                                 </a>
                             </li>
 
@@ -288,14 +276,14 @@
                             <li>
                                 <a href="{{ url_for('admin.chatbot_performance') }}" class="list-link">
                                     <span class="list-icon"><i class="fa fa-shield"></i></span>
-                                    Chatbot Performance
+                                    AI Service Desk Learning
                                 </a>
                             </li>
 
                             <li>
                                 <a href="{{ url_for('admin.resolution_comparison') }}" class="list-link">
                                     <span class="list-icon"><i class="fa fa-balance-scale"></i></span>
-                                    Resolution Comparison
+                                    Resolution Channel Comparison
                                 </a>
                             </li>
 
@@ -372,7 +360,7 @@
                             <li>
                                 <a href="{{ url_for('admin.category') }}" class="list-link">
                                     <span class="list-icon"><i class="fa fa-folder"></i></span>
-                                    FAQ Categories
+                                    IT Service Categories
                                 </a>
                             </li>
 
@@ -380,13 +368,6 @@
                                 <a href="{{ url_for('admin.priority') }}" class="list-link">
                                     <span class="list-icon"><i class="fa fa-flag"></i></span>
                                     Priorities
-                                </a>
-                            </li>
-
-                            <li>
-                                <a href="{{ url_for('admin.status') }}" class="list-link">
-                                    <span class="list-icon"><i class="fa fa-tasks"></i></span>
-                                    Statuses
                                 </a>
                             </li>
 
@@ -472,7 +453,7 @@
                             <li>
                                 <a href="{{ url_for('agent.faq_library') }}" class="list-link">
                                     <span class="list-icon"><i class="fa fa-question-circle"></i></span>
-                                    FAQ Library
+                                    Troubleshooting Library
                                 </a>
                             </li>
 
@@ -480,7 +461,7 @@
                                 <a href="{{ url_for('agent.knowledge_base') }}"
                                    class="list-link">
                                     <span class="list-icon"><i class="fa fa-database"></i></span>
-                                    Knowledge Base
+                                    IT Knowledge Base
                                 </a>
                             </li>
 
@@ -490,7 +471,7 @@
                                     <span class="list-icon">
                                         <i class="fa fa-lightbulb-o"></i>
                                     </span>
-                                    Agent Solutions
+                                    My Solutions
 
                                     <span class="badge badge-pill badge-info float-right"
                                           style="{% if agent_my_pending_solution_count == 0 %}display:none;{% endif %}">
@@ -505,7 +486,7 @@
                                     <span class="list-icon">
                                         <i class="fa fa-magic"></i>
                                     </span>
-                                    Suggested Articles
+                                    AI Suggested Solutions
                                 </a>
                             </li>
 
@@ -529,7 +510,7 @@
                             <li>
                                 <a href="{{ url_for('agent.incident_log') }}" class="list-link">
                                     <span class="list-icon"><i class="fa fa-shield"></i></span>
-                                    Incident Log
+                                    Security Incidents Log
                                     <span id="sidebarAgentIncidentBadge"
                                           class="badge badge-pill badge-danger float-right"
                                           style="{% if agent_incident_report_count == 0 %}display:none;{% endif %}">
@@ -541,7 +522,7 @@
                             <li>
                                 <a href="{{ url_for('agent.issue_log') }}" class="list-link">
                                     <span class="list-icon"><i class="fa fa-exclamation-triangle"></i></span>
-                                    Issue Log
+                                    Technical Issue Log
                                     <span id="sidebarAgentIssueBadge"
                                           class="badge badge-pill badge-danger float-right"
                                           style="{% if agent_issue_report_count == 0 %}display:none;{% endif %}">
@@ -553,7 +534,7 @@
                             <li>
                                 <a href="{{ url_for('agent.internal_reports') }}" class="list-link">
                                     <span class="list-icon"><i class="fa fa-file-text"></i></span>
-                                    Internal Reports
+                                    Internal Support Log
                                     <span id="sidebarAgentInternalBadge"
                                           class="badge badge-pill badge-danger float-right"
                                           style="{% if agent_internal_report_count == 0 %}display:none;{% endif %}">
@@ -582,7 +563,7 @@
                             <li>
                                 <a href="{{ url_for('agent.contribution_statistics') }}" class="list-link">
                                     <span class="list-icon"><i class="fa fa-bar-chart"></i></span>
-                                    Contribution Statistics
+                                    My Contribution Statistics
                                 </a>
                             </li>
 
@@ -623,45 +604,64 @@
                         </a>
                     </li>
                     <li>
-                        <a href="javascript:void(0)" class="list-link link-arrow">
-                            <span class="list-icon"><i class="fa fa-comments"></i></span>
-                            Customer Support
+                        <a href="{{ url_for('customer.email_preferences') }}"
+                           class="list-link">
+                            <span class="list-icon">
+                                <i class="fa fa-envelope"></i>
+                            </span>
 
+                            <span>
+                                Email Preferences
+                            </span>
                         </a>
-
-                        <ul class="list-unstyled list-hidden">
-
-                            <li>
-                                <a href="{{ url_for('customer.my_tickets') }}" class="list-link">
-                                    <span class="list-icon"><i class="fa fa-ticket"></i></span>
-                                    My Tickets
-                                </a>
-                            </li>
-
-                            <li>
-                                <a href="{{ url_for('customer.chat_page') }}" class="list-link">
-                                    <span class="list-icon"><i class="fa fa-comment"></i></span>
-                                    Chatbot
-                                </a>
-                            </li>
-
-                            <li>
-                                <a href="{{ url_for('customer.faqs') }}" class="list-link">
-                                    <span class="list-icon"><i class="fa fa-question-circle"></i></span>
-                                    FAQs
-                                </a>
-                            </li>
-
-                            <li>
-                                <a href="{{ url_for('customer.knowledge_base') }}"
-                                   class="list-link">
-                                    <span class="list-icon"><i class="fa fa-database"></i></span>
-                                    Knowledge Base
-                                </a>
-                            </li>
-
-                        </ul>
                     </li>
+                    <li>
+                        <a href="{{ url_for('customer.my_tickets') }}" class="list-link">
+                            <span class="list-icon"><i class="fa fa-ticket"></i></span>
+                            My Chats
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{{ url_for('customer.faqs') }}" class="list-link">
+                            <span class="list-icon"><i class="fa fa-question-circle"></i></span>
+                            FAQs
+                        </a>
+                    </li>
+
+                    <li>
+                        <a href="{{ url_for('customer.knowledge_base') }}"
+                           class="list-link">
+                            <span class="list-icon"><i class="fa fa-database"></i></span>
+                            Knowledge Base
+                        </a>
+                    </li>
+
+                    <li>
+                        <a href="{{ url_for('customer.chat') }}"
+                           id="newSupportRequestBtn"
+                           class="list-link">
+                            <span class="list-icon"><i class="fa fa-comments"></i></span>
+                            New Support Chat
+                        </a>
+                    </li>
+
+                    <li class="customer-chat-history-box">
+                        <div style="padding: 10px 15px;">
+                            <input type="text"
+                                   id="supportHistorySearch"
+                                   class="form-control form-control-sm"
+                                   placeholder="Search chat history...">
+
+                            <div id="supportRequestHistory"
+                                 style="margin-top: 10px; max-height: 250px; overflow-y: auto;">
+                                <small>Loading history...</small>
+                            </div>
+                        </div>
+                    </li>
+
+
+
+</li>
 
                     {% endif %}
 

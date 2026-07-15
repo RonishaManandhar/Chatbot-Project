@@ -13,17 +13,53 @@ def get_database_url():
 
 
 class BaseConfig(object):
-    SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key")
+    SECRET_KEY = os.getenv(
+        "SECRET_KEY",
+        "dev-secret-key"
+    )
+
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
-    MAIL_SERVER = "localhost"
-    MAIL_PORT = 1025
-    MAIL_USERNAME = "support@chatbot.com"
-    MAIL_PASSWORD = ""
+    # =====================================
+    # SMTP
+    # =====================================
 
-    MAX_CONTENT_LENGTH = 4 * 1024 * 1024
+    MAIL_SERVER = os.getenv(
+        "MAIL_SERVER",
+        "smtp.gmail.com"
+    )
 
-    PROFILE_DIR = os.path.join(path, "app/static/uploads/profiles")
+    MAIL_PORT = int(
+        os.getenv(
+            "MAIL_PORT",
+            587
+        )
+    )
+
+    MAIL_USE_TLS = True
+    MAIL_USE_SSL = False
+
+    MAIL_USERNAME = os.getenv(
+        "MAIL_USERNAME"
+    )
+
+    MAIL_PASSWORD = os.getenv(
+        "MAIL_PASSWORD"
+    )
+
+    MAIL_DEFAULT_SENDER = (
+        "NEF IT Service Desk",
+        os.getenv("MAIL_USERNAME")
+    )
+
+    MAX_CONTENT_LENGTH = (
+        4 * 1024 * 1024
+    )
+
+    PROFILE_DIR = os.path.join(
+        path,
+        "app/static/uploads/profiles"
+    )
 
 
 class TestConfig(BaseConfig):

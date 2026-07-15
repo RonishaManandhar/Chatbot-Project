@@ -1,0 +1,13 @@
+Hello {{ user.name }}
+
+Your support ticket has been created.
+
+Ticket Number:
+{{ ticket.number }}
+
+Subject:
+{{ ticket.subject }}
+
+Our support team will review your request shortly.
+
+Support Team

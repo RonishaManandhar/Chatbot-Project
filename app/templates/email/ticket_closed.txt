@@ -1,0 +1,14 @@
+Hello {{ user.name }}
+
+Your ticket has been resolved.
+
+Ticket Number:
+{{ ticket.number }}
+
+Subject:
+{{ ticket.subject }}
+
+If your issue still exists,
+you may reopen the ticket.
+
+Support Team

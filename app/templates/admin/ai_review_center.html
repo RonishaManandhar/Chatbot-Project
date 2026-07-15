@@ -1,0 +1,1070 @@
+﻿{% extends 'layouts/dashboard.base.html' %}
+
+{% block style %}
+{{ super() }}
+
+<style>
+    .review-page {
+        max-width: 1100px;
+    }
+
+    .review-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 22px;
+    }
+
+    .review-tab {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 10px 15px;
+        border: 1px solid #d1d5db;
+        border-radius: 10px;
+        background: #ffffff;
+        color: #374151;
+        font-size: 14px;
+        font-weight: 600;
+        text-decoration: none;
+    }
+
+        .review-tab:hover {
+            color: #111827;
+            background: #f8fafc;
+            text-decoration: none;
+        }
+
+        .review-tab.active {
+            color: #ffffff;
+            background: #111827;
+            border-color: #111827;
+        }
+
+    .section-panel {
+        padding: 20px;
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        background: #ffffff;
+    }
+
+    .section-heading {
+        margin-bottom: 5px;
+        color: #111827;
+        font-size: 19px;
+        font-weight: 700;
+    }
+
+    .section-description {
+        margin-bottom: 20px;
+        color: #6b7280;
+        font-size: 13px;
+    }
+
+    .review-card {
+        margin-bottom: 18px;
+        overflow: hidden;
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        background: #ffffff;
+    }
+
+        .review-card:last-child {
+            margin-bottom: 0;
+        }
+
+    .review-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 13px 16px;
+        border-bottom: 1px solid #e5e7eb;
+        background: #f8fafc;
+    }
+
+    .review-identification {
+        color: #111827;
+        font-size: 14px;
+        font-weight: 700;
+    }
+
+    .review-meta {
+        margin-top: 3px;
+        color: #6b7280;
+        font-size: 12px;
+    }
+
+    .review-statuses {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 6px;
+    }
+
+    .review-card-body {
+        padding: 16px;
+    }
+
+    .message-heading {
+        margin-bottom: 7px;
+        color: #374151;
+        font-size: 13px;
+        font-weight: 700;
+    }
+
+    .message-box {
+        margin-bottom: 16px;
+        padding: 13px 14px;
+        overflow-wrap: anywhere;
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        background: #f8fafc;
+        color: #1f2937;
+        font-size: 14px;
+        line-height: 1.6;
+        white-space: pre-wrap;
+    }
+
+        .message-box.ai-answer {
+            background: #f0f7ff;
+            border-color: #bfdbfe;
+        }
+
+    .review-question {
+        margin-bottom: 10px;
+        color: #374151;
+        font-size: 13px;
+        font-weight: 700;
+    }
+
+    .review-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+        .review-actions form {
+            margin: 0;
+        }
+
+    .faq-editor {
+        margin-top: 16px;
+        padding: 16px;
+        border: 1px solid #bfdbfe;
+        border-radius: 10px;
+        background: #f8fbff;
+    }
+
+    .faq-editor-title {
+        margin-bottom: 14px;
+        color: #1e3a8a;
+        font-size: 15px;
+        font-weight: 700;
+    }
+
+    .training-filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 18px;
+    }
+
+    .empty-state {
+        padding: 30px 20px;
+        border: 1px dashed #cbd5e1;
+        border-radius: 12px;
+        background: #f8fafc;
+        text-align: center;
+    }
+
+    .empty-state-icon {
+        margin-bottom: 8px;
+        color: #10b981;
+        font-size: 31px;
+    }
+
+    .empty-state-title {
+        margin-bottom: 5px;
+        color: #111827;
+        font-weight: 700;
+    }
+
+    .empty-state-text {
+        margin: 0;
+        color: #6b7280;
+        font-size: 13px;
+    }
+
+    .recurring-table td {
+        vertical-align: middle;
+    }
+
+    .metric-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+        gap: 14px;
+        margin-bottom: 20px;
+    }
+
+    .metric-card {
+        padding: 18px;
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        background: #ffffff;
+    }
+
+    .metric-number {
+        margin-bottom: 4px;
+        color: #111827;
+        font-size: 29px;
+        font-weight: 700;
+    }
+
+    .metric-label {
+        color: #6b7280;
+        font-size: 13px;
+    }
+
+    .workflow-box {
+        padding: 20px;
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        background: #ffffff;
+    }
+
+    .workflow-step {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 15px;
+    }
+
+        .workflow-step:last-child {
+            margin-bottom: 0;
+        }
+
+    .workflow-number {
+        display: flex;
+        flex: 0 0 30px;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: #111827;
+        color: #ffffff;
+        font-size: 13px;
+        font-weight: 700;
+    }
+
+    .workflow-title {
+        color: #111827;
+        font-size: 14px;
+        font-weight: 700;
+    }
+
+    .workflow-text {
+        margin-top: 2px;
+        color: #6b7280;
+        font-size: 13px;
+    }
+
+    @media (max-width: 700px) {
+        .review-card-header {
+            flex-direction: column;
+        }
+
+        .review-statuses {
+            justify-content: flex-start;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block header %}
+    {% block title %}AI Review Center{% endblock %}
+{% endblock %}
+
+{% block text %}
+Review chatbot answers, record whether they are suitable, investigate unsuccessful answers, and convert useful responses into IT support FAQs.
+{% endblock %}
+
+{% block content %}
+
+<div class="review-page">
+
+    {% include 'includes/alert.html' %}
+
+    <div class="review-tabs">
+
+        <a href="{{ url_for('admin.ai_review_center', tab='pending') }}"
+           class="review-tab {% if active_tab == 'pending' %}active{% endif %}">
+
+            <i class="fa fa-clock-o"></i>
+            Pending Reviews
+
+            {% if pending_count > 0 %}
+            <span class="badge badge-warning">
+                {{ pending_count }}
+            </span>
+            {% endif %}
+        </a>
+
+        <a href="{{ url_for('admin.ai_review_center', tab='training', type='all') }}"
+           class="review-tab {% if active_tab == 'training' %}active{% endif %}">
+
+            <i class="fa fa-graduation-cap"></i>
+            Training Cases
+
+            {% if training_case_count > 0 %}
+            <span class="badge badge-danger">
+                {{ training_case_count }}
+            </span>
+            {% endif %}
+        </a>
+
+        <a href="{{ url_for('admin.ai_review_center', tab='recurring') }}"
+           class="review-tab {% if active_tab == 'recurring' %}active{% endif %}">
+
+            <i class="fa fa-repeat"></i>
+            Recurring IT Issues
+        </a>
+
+        <a href="{{ url_for('admin.ai_review_center', tab='summary') }}"
+           class="review-tab {% if active_tab == 'summary' %}active{% endif %}">
+
+            <i class="fa fa-bar-chart"></i>
+            Learning Summary
+        </a>
+
+    </div>
+
+    {% if active_tab == 'pending' %}
+
+    <div class="section-panel">
+
+        <div class="section-heading">
+            Pending AI Response Reviews
+        </div>
+
+        <div class="section-description">
+            Read the customer's issue and the AI answer together. Approve a suitable answer, reject an unsafe or incorrect answer, or save a useful answer as an FAQ.
+        </div>
+
+        {% if pending_logs %}
+
+        {% for log in pending_logs %}
+
+        {% set customer_question = find_previous_customer_message(log) %}
+
+        <div class="review-card">
+
+            <div class="review-card-header">
+
+                <div>
+                    <div class="review-identification">
+                        AI message #{{ log.id }}
+                    </div>
+
+                    <div class="review-meta">
+                        {{ log.created_at.strftime('%d %b %Y, %H:%M') if log.created_at else 'Date unavailable' }}
+
+                        {% if log.session_id %}
+                        | Chat session #{{ log.session_id }}
+                        {% endif %}
+
+                        {% if log.ticket_id %}
+                        | Ticket #{{ log.ticket_id }}
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="review-statuses">
+
+                    {% if log.faq_matched %}
+                    <span class="badge badge-info">
+                        FAQ matched
+                    </span>
+                    {% endif %}
+
+                    {% if log.ai_used %}
+                    <span class="badge badge-primary">
+                        AI used
+                    </span>
+                    {% endif %}
+
+                    {% if log.escalated %}
+                    <span class="badge badge-warning">
+                        Escalated
+                    </span>
+                    {% endif %}
+
+                    {% if log.resolution_status %}
+                    <span class="badge badge-secondary">
+                        {{ log.resolution_status }}
+                    </span>
+                    {% endif %}
+
+                </div>
+
+            </div>
+
+            <div class="review-card-body">
+
+                <div class="message-heading">
+                    Customer issue
+                </div>
+
+                <div class="message-box">
+                    {{ customer_question or 'The matching customer message could not be found.' }}
+                </div>
+
+                <div class="message-heading">
+                    Chatbot response
+                </div>
+
+                <div class="message-box ai-answer">{{ clean_ai_message(log.message)|safe }}</div>
+
+                <div class="review-question">
+                    What should happen to this response?
+                </div>
+
+                <div class="review-actions">
+
+                    <form method="POST"
+                          action="{{ url_for('admin.approve_chat_log', id=log.id) }}">
+
+                        <input type="hidden"
+                               name="csrf_token"
+                               value="{{ csrf_token() }}">
+
+                        <button type="submit"
+                                class="btn btn-success btn-sm">
+
+                            <i class="fa fa-check"></i>
+                            Approve response
+                        </button>
+                    </form>
+
+                    <form method="POST"
+                          action="{{ url_for('admin.reject_chat_log', id=log.id) }}">
+
+                        <input type="hidden"
+                               name="csrf_token"
+                               value="{{ csrf_token() }}">
+
+                        <button type="submit"
+                                class="btn btn-danger btn-sm">
+
+                            <i class="fa fa-times"></i>
+                            Reject response
+                        </button>
+                    </form>
+
+                    <button type="button"
+                            class="btn btn-primary btn-sm"
+                            data-toggle="collapse"
+                            data-target="#faq-editor-{{ log.id }}"
+                            aria-expanded="false"
+                            aria-controls="faq-editor-{{ log.id }}">
+
+                        <i class="fa fa-book"></i>
+                        Edit and save as FAQ
+                    </button>
+
+                </div>
+
+                <div id="faq-editor-{{ log.id }}"
+                     class="collapse faq-editor">
+
+                    <div class="faq-editor-title">
+                        Create an IT support FAQ
+                    </div>
+
+                    <form method="POST"
+                          action="{{ url_for('admin.save_chat_log_as_faq', id=log.id) }}">
+
+                        <input type="hidden"
+                               name="csrf_token"
+                               value="{{ csrf_token() }}">
+
+                        <div class="form-group">
+                            <label for="question-{{ log.id }}">
+                                FAQ question
+                            </label>
+
+                            <input type="text"
+                                   id="question-{{ log.id }}"
+                                   name="question"
+                                   class="form-control"
+                                   value="{{ customer_question }}"
+                                   required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="answer-{{ log.id }}">
+                                Correct FAQ answer
+                            </label>
+
+                            <textarea id="answer-{{ log.id }}"
+                                      name="answer"
+                                      class="form-control"
+                                      rows="7"
+                                      required>{{ clean_ai_message(log.message) }}</textarea>
+
+                            <small class="form-text text-muted">
+                                Edit the answer before saving when the original AI response is incomplete or incorrect.
+                            </small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="category-{{ log.id }}">
+                                IT service category
+                            </label>
+
+                            <select id="category-{{ log.id }}"
+                                    name="category_id"
+                                    class="form-control"
+                                    required>
+
+                                <option value="">
+                                    Select a category
+                                </option>
+
+                                {% for category in categories %}
+                                <option value="{{ category.id }}">
+                                    {{ category.category }}
+                                </option>
+                                {% endfor %}
+
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="tags-{{ log.id }}">
+                                Search tags
+                            </label>
+
+                            <input type="text"
+                                   id="tags-{{ log.id }}"
+                                   name="tags"
+                                   class="form-control"
+                                   value="ai-reviewed,it-support">
+
+                            <small class="form-text text-muted">
+                                Separate tags with commas.
+                            </small>
+                        </div>
+
+                        <button type="submit"
+                                class="btn btn-primary btn-sm">
+
+                            <i class="fa fa-save"></i>
+                            Save FAQ
+                        </button>
+
+                    </form>
+
+                </div>
+
+            </div>
+
+        </div>
+
+        {% endfor %}
+
+        {% else %}
+
+        <div class="empty-state">
+
+            <div class="empty-state-icon">
+                <i class="fa fa-check-circle"></i>
+            </div>
+
+            <div class="empty-state-title">
+                All AI responses have been reviewed
+            </div>
+
+            <p class="empty-state-text">
+                There are currently no pending responses.
+            </p>
+
+        </div>
+
+        {% endif %}
+
+    </div>
+
+    {% elif active_tab == 'training' %}
+
+    <div class="section-panel">
+
+        <div class="section-heading">
+            AI Training Cases
+        </div>
+
+        <div class="section-description">
+            These responses were not solved, escalated to human support, or rejected during administrator review.
+        </div>
+
+        <div class="training-filters">
+
+            <a href="{{ url_for('admin.ai_review_center', tab='training', type='all') }}"
+               class="btn btn-sm {% if training_type == 'all' %}btn-dark{% else %}btn-outline-dark{% endif %}">
+                All cases
+            </a>
+
+            <a href="{{ url_for('admin.ai_review_center', tab='training', type='failed') }}"
+               class="btn btn-sm {% if training_type == 'failed' %}btn-danger{% else %}btn-outline-danger{% endif %}">
+                Not solved
+            </a>
+
+            <a href="{{ url_for('admin.ai_review_center', tab='training', type='escalated') }}"
+               class="btn btn-sm {% if training_type == 'escalated' %}btn-warning{% else %}btn-outline-warning{% endif %}">
+                Escalated
+            </a>
+
+            <a href="{{ url_for('admin.ai_review_center', tab='training', type='rejected') }}"
+               class="btn btn-sm {% if training_type == 'rejected' %}btn-secondary{% else %}btn-outline-secondary{% endif %}">
+                Rejected
+            </a>
+
+        </div>
+
+        {% if training_logs %}
+
+        {% for log in training_logs %}
+
+        {% set customer_question = find_previous_customer_message(log) %}
+
+        <div class="review-card">
+
+            <div class="review-card-header">
+
+                <div>
+                    <div class="review-identification">
+                        Training case #{{ log.id }}
+                    </div>
+
+                    <div class="review-meta">
+                        {{ log.created_at.strftime('%d %b %Y, %H:%M') if log.created_at else 'Date unavailable' }}
+                    </div>
+                </div>
+
+                <div class="review-statuses">
+
+                    {% if log.resolution_status == 'Not Solved' %}
+                    <span class="badge badge-danger">
+                        Not solved
+                    </span>
+                    {% endif %}
+
+                    {% if log.escalated %}
+                    <span class="badge badge-warning">
+                        Escalated
+                    </span>
+                    {% endif %}
+
+                    {% if log.review_status == 'Rejected' %}
+                    <span class="badge badge-secondary">
+                        Rejected
+                    </span>
+                    {% endif %}
+
+                </div>
+
+            </div>
+
+            <div class="review-card-body">
+
+                <div class="message-heading">
+                    Customer issue
+                </div>
+
+                <div class="message-box">
+                    {{ customer_question or 'The matching customer message could not be found.' }}
+                </div>
+
+                <div class="message-heading">
+                    Chatbot response
+                </div>
+
+                <div class="message-box ai-answer">{{ clean_ai_message(log.message)|safe }}</div>
+
+                <div class="review-actions">
+
+                    {% if log.review_status != 'Approved' %}
+
+                    <form method="POST"
+                          action="{{ url_for('admin.approve_chat_log', id=log.id) }}">
+
+                        <input type="hidden"
+                               name="csrf_token"
+                               value="{{ csrf_token() }}">
+
+                        <button type="submit"
+                                class="btn btn-success btn-sm">
+                            Mark as approved
+                        </button>
+                    </form>
+
+                    {% endif %}
+
+                    <button type="button"
+                            class="btn btn-primary btn-sm"
+                            data-toggle="collapse"
+                            data-target="#training-faq-editor-{{ log.id }}">
+
+                        Edit and save as FAQ
+                    </button>
+
+                </div>
+
+                <div id="training-faq-editor-{{ log.id }}"
+                     class="collapse faq-editor">
+
+                    <div class="faq-editor-title">
+                        Create a corrected FAQ
+                    </div>
+
+                    <form method="POST"
+                          action="{{ url_for('admin.save_chat_log_as_faq', id=log.id) }}">
+
+                        <input type="hidden"
+                               name="csrf_token"
+                               value="{{ csrf_token() }}">
+
+                        <div class="form-group">
+                            <label>
+                                FAQ question
+                            </label>
+
+                            <input type="text"
+                                   name="question"
+                                   class="form-control"
+                                   value="{{ customer_question }}"
+                                   required>
+                        </div>
+
+                        <div class="form-group">
+                            <label>
+                                Correct answer
+                            </label>
+
+                            <textarea name="answer"
+                                      class="form-control"
+                                      rows="7"
+                                      required>{{ clean_ai_message(log.message) }}</textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label>
+                                IT service category
+                            </label>
+
+                            <select name="category_id"
+                                    class="form-control"
+                                    required>
+
+                                <option value="">
+                                    Select a category
+                                </option>
+
+                                {% for category in categories %}
+                                <option value="{{ category.id }}">
+                                    {{ category.category }}
+                                </option>
+                                {% endfor %}
+
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label>
+                                Search tags
+                            </label>
+
+                            <input type="text"
+                                   name="tags"
+                                   class="form-control"
+                                   value="training-case,it-support">
+                        </div>
+
+                        <button type="submit"
+                                class="btn btn-primary btn-sm">
+                            Save corrected FAQ
+                        </button>
+
+                    </form>
+
+                </div>
+
+            </div>
+
+        </div>
+
+        {% endfor %}
+
+        {% else %}
+
+        <div class="empty-state">
+
+            <div class="empty-state-icon">
+                <i class="fa fa-check-circle"></i>
+            </div>
+
+            <div class="empty-state-title">
+                No matching training cases
+            </div>
+
+            <p class="empty-state-text">
+                There are no records matching the selected filter.
+            </p>
+
+        </div>
+
+        {% endif %}
+
+    </div>
+
+    {% elif active_tab == 'recurring' %}
+
+    <div class="section-panel">
+
+        <div class="section-heading">
+            Recurring IT Issues
+        </div>
+
+        <div class="section-description">
+            Questions appearing more than once are shown here so administrators can identify missing FAQs and knowledge articles.
+        </div>
+
+        {% if recurring_issues %}
+
+        <div class="table-responsive">
+
+            <table class="table table-striped table-borderless recurring-table">
+
+                <thead>
+                    <tr>
+                        <th>
+                            Customer issue
+                        </th>
+
+                        <th style="width: 150px;">
+                            Occurrences
+                        </th>
+                    </tr>
+                </thead>
+
+                <tbody>
+
+                    {% for issue, total in recurring_issues %}
+
+                    <tr>
+                        <td>
+                            {{ issue }}
+                        </td>
+
+                        <td>
+                            <span class="badge badge-info">
+                                {{ total }} times
+                            </span>
+                        </td>
+                    </tr>
+
+                    {% endfor %}
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+        {% else %}
+
+        <div class="empty-state">
+
+            <div class="empty-state-icon">
+                <i class="fa fa-info-circle"></i>
+            </div>
+
+            <div class="empty-state-title">
+                No recurring questions yet
+            </div>
+
+            <p class="empty-state-text">
+                Repeated customer issues will appear here automatically.
+            </p>
+
+        </div>
+
+        {% endif %}
+
+    </div>
+
+    {% elif active_tab == 'summary' %}
+
+    <div class="metric-grid">
+
+        <div class="metric-card">
+            <div class="metric-number">
+                {{ pending_count }}
+            </div>
+
+            <div class="metric-label">
+                Pending reviews
+            </div>
+        </div>
+
+        <div class="metric-card">
+            <div class="metric-number">
+                {{ approved_count }}
+            </div>
+
+            <div class="metric-label">
+                Approved responses
+            </div>
+        </div>
+
+        <div class="metric-card">
+            <div class="metric-number">
+                {{ rejected_count }}
+            </div>
+
+            <div class="metric-label">
+                Rejected responses
+            </div>
+        </div>
+
+        <div class="metric-card">
+            <div class="metric-number">
+                {{ failed_count }}
+            </div>
+
+            <div class="metric-label">
+                Not-solved answers
+            </div>
+        </div>
+
+        <div class="metric-card">
+            <div class="metric-number">
+                {{ escalated_count }}
+            </div>
+
+            <div class="metric-label">
+                Escalated responses
+            </div>
+        </div>
+
+        <div class="metric-card">
+            <div class="metric-number">
+                {{ saved_faq_count }}
+            </div>
+
+            <div class="metric-label">
+                Responses saved as FAQs
+            </div>
+        </div>
+
+        <div class="metric-card">
+            <div class="metric-number">
+                {{ success_rate }}%
+            </div>
+
+            <div class="metric-label">
+                Recorded AI resolution rate
+            </div>
+        </div>
+
+    </div>
+
+    <div class="workflow-box">
+
+        <div class="section-heading">
+            Administrator review workflow
+        </div>
+
+        <div class="section-description">
+            Each action changes the response's review status and helps organise chatbot learning records.
+        </div>
+
+        <div class="workflow-step">
+
+            <div class="workflow-number">
+                1
+            </div>
+
+            <div>
+                <div class="workflow-title">
+                    Compare the question and answer
+                </div>
+
+                <div class="workflow-text">
+                    Check whether the answer is relevant, correct, clear, and safe.
+                </div>
+            </div>
+
+        </div>
+
+        <div class="workflow-step">
+
+            <div class="workflow-number">
+                2
+            </div>
+
+            <div>
+                <div class="workflow-title">
+                    Approve a suitable answer
+                </div>
+
+                <div class="workflow-text">
+                    The response is removed from Pending Reviews and marked Approved.
+                </div>
+            </div>
+
+        </div>
+
+        <div class="workflow-step">
+
+            <div class="workflow-number">
+                3
+            </div>
+
+            <div>
+                <div class="workflow-title">
+                    Reject an incorrect answer
+                </div>
+
+                <div class="workflow-text">
+                    The response is marked Rejected and remains available under Training Cases.
+                </div>
+            </div>
+
+        </div>
+
+        <div class="workflow-step">
+
+            <div class="workflow-number">
+                4
+            </div>
+
+            <div>
+                <div class="workflow-title">
+                    Correct and save useful content
+                </div>
+
+                <div class="workflow-text">
+                    Edit the question or answer before saving it as an active FAQ.
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+    {% endif %}
+
+</div>
+
+{% endblock %}

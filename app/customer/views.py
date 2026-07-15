@@ -4,24 +4,62 @@ from flask_login import current_user
 from flask_socketio import join_room
 from app.socketio_ext import socketio
 from openai import OpenAI
+from app.services.ai_service import ask_chatgpt
 import os
 import datetime
 import uuid
-
-from sqlalchemy import desc, or_
 from werkzeug.utils import secure_filename
-from werkzeug.security import generate_password_hash
+from app.services.email_service import (
+    send_password_changed_email,
+    send_satisfaction_email,
+    send_ticket_closed_email,
+    send_ticket_created_email,
+    send_ticket_deleted_email,
+    send_ticket_escalated_email,
+    send_ticket_reopened_email
+)
+from flask import (
+    current_app,
+    flash,
+    redirect,
+    request,
+    url_for
+)
+import json
+
+from sqlalchemy import desc, or_, func
+from werkzeug.utils import secure_filename
+from werkzeug.security import (
+    generate_password_hash,
+    check_password_hash
+)
 
 from app.exts import db, csrf
-from app.customer.forms import TicketForm, UpdateTicketForm, CommentForm, ChangeProfileForm, ChangePasswordForm
-from app.models import User, Ticket, Comment, Notification, FAQ, ChatMessage, Category, Status, ChatbotSetting, KnowledgeArticle, CustomerSatisfaction, MaintenanceSetting, SystemEvent
+from app.customer.forms import ChangeEmailForm, TicketForm, UpdateTicketForm, CommentForm, ChangeProfileForm, ChangePasswordForm
+from app.models import (
+    User,
+    Ticket,
+    Comment,
+    Notification,
+    FAQ,
+    ChatMessage,
+    ChatSession,
+    Category,
+    Priority,
+    Status,
+    ChatbotSetting,
+    KnowledgeArticle,
+    CustomerSatisfaction,
+    MaintenanceSetting,
+    SystemEvent,
+    EmailPreference
+)
 from app.utils.generate_digits import random_numbers
 from app.utils.authorized_role import login_required
 
 
 customer_blueprint = Blueprint("customer", __name__)
 path = os.getcwd()
-GUEST_QUERY_LIMIT = 3
 def log_system_event(event_type, message, severity="Info", user_id=None, ticket_id=None):
     try:
         event = SystemEvent(
@@ -42,6 +80,47 @@ def log_system_event(event_type, message, severity="Info", user_id=None, ticket_
         print("CUSTOMER SYSTEM EVENT LOG ERROR:", e)
         return None
 
+
+
+def save_or_update_rating_message(
+    customer_id,
+    rating,
+    feedback="",
+    ticket_id=None,
+    session_id=None
+):
+    message = (
+        f"<strong>Customer Satisfaction Rating</strong><br>"
+        f"Rating: {rating}/5<br>"
+        f"Feedback: {feedback if feedback else 'No feedback provided.'}"
+    )
+
+    existing_message = ChatMessage.query.filter(
+        ChatMessage.user_id == customer_id,
+        ChatMessage.role == "system",
+        ChatMessage.message.ilike("%Customer Satisfaction Rating%"),
+        ChatMessage.ticket_id == ticket_id,
+        ChatMessage.session_id == session_id
+    ).first()
+
+    if existing_message:
+        existing_message.message = message
+        existing_message.resolution_status = "Solved"
+        existing_message.customer_visible = True
+        existing_message.created_at = datetime.datetime.utcnow()
+    else:
+        db.session.add(ChatMessage(
+            user_id=customer_id,
+            session_id=session_id,
+            ticket_id=ticket_id,
+            role="system",
+            message=message,
+            resolution_status="Solved",
+            customer_visible=True,
+            faq_matched=False,
+            ai_used=False,
+            escalated=False
+        ))
 
 # ============================================================
 # TEMPLATE HELPER
@@ -104,30 +183,50 @@ def get_closed_status_id():
 def get_escalated_status_id():
     return get_status_id("Escalated", None)
 
+def get_category_by_name(name, fallback_id=1):
+    if not name:
+        return fallback_id
+
+    category = Category.query.filter(
+        Category.category.ilike(name)
+    ).first()
+
+    return category.id if category else fallback_id
+
+
+def get_priority_by_name(name, fallback_id=2):
+    if not name:
+        return fallback_id
+
+    priority = Priority.query.filter(
+        Priority.priority.ilike(name)
+    ).first()
+
+    return priority.id if priority else fallback_id
+
+
 
 def get_active_ticket_for_user(user_id):
-    open_id = get_open_status_id()
-    pending_id = get_pending_status_id()
-    waiting_id = get_waiting_customer_status_id()
-    escalated_id = get_escalated_status_id()
-
-    active_status_ids = [open_id, pending_id]
-
-    if waiting_id:
-        active_status_ids.append(waiting_id)
-
-    if escalated_id:
-        active_status_ids.append(escalated_id)
-
-    return (
-        Ticket.query
-        .filter(Ticket.author_id == user_id)
-        .filter(Ticket.status_id.in_(active_status_ids))
-        .order_by(desc(Ticket.updated_at), desc(Ticket.created_at))
-        .first()
-    )
+    return None
 
 def auto_close_waiting_customer_tickets():
+    """
+    Automatically close tickets that have remained in
+    'Waiting For Customer' for at least 48 hours.
+
+    For every ticket automatically closed:
+
+        1. Change the ticket status to Closed.
+        2. Add a system comment.
+        3. Hide the old customer chat.
+        4. Commit the ticket closure.
+        5. Send the ticket-closed email.
+        6. Send the satisfaction-rating email.
+        7. Record both email attempts through EmailLog.
+        8. Create a SystemEvent record.
+        9. Publish real-time Socket.IO updates.
+    """
+
     waiting_id = get_waiting_customer_status_id()
     closed_id = get_closed_status_id()
 
@@ -145,49 +244,198 @@ def auto_close_waiting_customer_tickets():
     for ticket in tickets:
         if not ticket.waiting_customer_since:
             if ticket.updated_at:
-                ticket.waiting_customer_since = ticket.updated_at.replace(tzinfo=None)
+                ticket.waiting_customer_since = (
+                    ticket.updated_at.replace(
+                        tzinfo=None
+                    )
+                )
+
             elif ticket.created_at:
-                ticket.waiting_customer_since = ticket.created_at.replace(tzinfo=None)
+                ticket.waiting_customer_since = (
+                    ticket.created_at.replace(
+                        tzinfo=None
+                    )
+                )
+
             else:
                 ticket.waiting_customer_since = now
 
+        waiting_since = ticket.waiting_customer_since
+
+        if waiting_since.tzinfo is not None:
+            waiting_since = waiting_since.replace(
+                tzinfo=None
+            )
+
         waiting_hours = (
-            now - ticket.waiting_customer_since.replace(tzinfo=None)
+            now - waiting_since
         ).total_seconds() / 3600
 
-        if waiting_hours >= 48:
-            ticket.status_id = closed_id
+        if waiting_hours < 48:
+            continue
 
-            close_comment = Comment(
-                comment="Ticket automatically closed because the customer did not respond within 48 hours.",
-                author_id=ticket.owner_id or ticket.author_id,
-                ticket_id=ticket.id
+        # ----------------------------------------------------
+        # CLOSE TICKET
+        # ----------------------------------------------------
+
+        ticket.status_id = closed_id
+        ticket.waiting_customer_since = None
+        ticket.inactive_reminder_sent = False
+
+        close_message = (
+            "Ticket automatically closed because the customer "
+            "did not respond within 48 hours."
+        )
+
+        close_comment = Comment(
+            comment=close_message,
+            author_id=(
+                ticket.owner_id
+                or ticket.author_id
+            ),
+            ticket_id=ticket.id
+        )
+
+        db.session.add(close_comment)
+
+        ChatMessage.query.filter(
+            ChatMessage.user_id == ticket.author_id
+        ).update({
+            "customer_visible": False
+        })
+
+        # Commit before rendering email templates so the ticket
+        # has its final Closed status.
+        db.session.commit()
+
+        # Refresh relationships and status values after commit.
+        db.session.refresh(ticket)
+
+        # ----------------------------------------------------
+        # SEND CLOSED AND SATISFACTION EMAILS
+        # ----------------------------------------------------
+
+        customer = ticket.author
+
+        closed_email_sent = False
+        satisfaction_email_sent = False
+
+        if customer and customer.email:
+            closed_email_sent = send_ticket_closed_email(
+                customer,
+                ticket
             )
 
-            db.session.add(close_comment)
+            if not closed_email_sent:
+                current_app.logger.error(
+                    "Automatic ticket-closed email failed "
+                    "for ticket_id=%s customer_id=%s",
+                    ticket.id,
+                    ticket.author_id
+                )
 
-            ChatMessage.query.filter(
-                ChatMessage.user_id == ticket.author_id
-            ).update({
-                "customer_visible": False
-            })
-
-            socketio.emit(
-                "ticket_closed",
-                {
-                    **serialize_ticket(ticket),
-                    "message": "Ticket automatically closed due to customer inactivity."
-                },
-                room=f"ticket_{ticket.id}"
+            satisfaction_email_sent = send_satisfaction_email(
+                customer,
+                ticket
             )
 
-            socketio.emit("global_ticket_updated", serialize_ticket(ticket))
-            socketio.emit("sidebar_counts_updated", serialize_ticket(ticket))
-            socketio.emit("notification_updated", serialize_ticket(ticket))
+            if not satisfaction_email_sent:
+                current_app.logger.error(
+                    "Automatic satisfaction email failed "
+                    "for ticket_id=%s customer_id=%s",
+                    ticket.id,
+                    ticket.author_id
+                )
 
-            emit_customer_refresh(ticket.author_id, "ticket_auto_closed")
+        # ----------------------------------------------------
+        # SYSTEM EVENT LOG
+        # ----------------------------------------------------
 
-    db.session.commit()
+        log_system_event(
+            event_type="Ticket Automatically Closed",
+            severity="Info",
+            message=(
+                f"Ticket #{ticket.number} was automatically "
+                "closed after 48 hours without a customer reply. "
+                f"Closed email result: {closed_email_sent}. "
+                f"Satisfaction email result: "
+                f"{satisfaction_email_sent}."
+            ),
+            user_id=ticket.author_id,
+            ticket_id=ticket.id
+        )
+
+        # ----------------------------------------------------
+        # REAL-TIME UPDATES
+        # ----------------------------------------------------
+
+        payload = {
+            **serialize_ticket(ticket),
+            "message": close_message,
+            "closed_email_sent": closed_email_sent,
+            "satisfaction_email_sent": (
+                satisfaction_email_sent
+            )
+        }
+
+        socketio.emit(
+            "new_comment",
+            {
+                **payload,
+                "comment_id": close_comment.id,
+                "sender_role": (
+                    close_comment.user.role
+                    if close_comment.user
+                    else "System"
+                ),
+                "sender_name": (
+                    close_comment.user.name
+                    if close_comment.user
+                    else "System"
+                ),
+                "author_id": close_comment.author_id,
+                "is_attachment": False,
+                "created_at": (
+                    close_comment.created_at.strftime(
+                        "%d %b %Y, %H:%M %p"
+                    )
+                    if close_comment.created_at
+                    else ""
+                )
+            },
+            room=f"ticket_{ticket.id}"
+        )
+
+        socketio.emit(
+            "ticket_closed",
+            payload,
+            room=f"ticket_{ticket.id}"
+        )
+
+        socketio.emit(
+            "global_ticket_updated",
+            payload
+        )
+
+        socketio.emit(
+            "sidebar_counts_updated",
+            payload
+        )
+
+        socketio.emit(
+            "notification_updated",
+            payload
+        )
+
+        socketio.emit(
+            "analytics_updated",
+            payload
+        )
+
+        emit_customer_refresh(
+            ticket.author_id,
+            "ticket_auto_closed"
+        )
 
 
 # ============================================================
@@ -240,7 +488,122 @@ def serialize_chat_message(msg):
         "resolution_status": msg.resolution_status,
         "created_at": msg.created_at.strftime("%d %b %Y %H:%M") if msg.created_at else ""
     }
+def serialize_chat_session(chat_session):
+    if not chat_session:
+        return None
 
+    ticket = (
+        chat_session.ticket
+        if chat_session.ticket_id
+        else None
+    )
+
+    ticket_status = (
+        ticket.status.status
+        if ticket and ticket.status
+        else ""
+    )
+
+    try:
+        triage_data = json.loads(
+            chat_session.triage_data or "{}"
+        )
+
+        if not isinstance(triage_data, dict):
+            triage_data = {}
+
+    except (TypeError, ValueError, json.JSONDecodeError):
+        triage_data = {}
+
+    current_stage = (
+        chat_session.current_stage
+        or "triage"
+    )
+
+    # A closed ticket always opens read-only.
+    if ticket_status.lower() == "closed":
+        current_stage = "closed"
+
+    read_only = current_stage in {
+        "solved",
+        "closed"
+    }
+
+    can_type = False
+
+    if current_stage == "triage":
+        can_type = True
+
+    elif (
+        current_stage == "ticket_created"
+        and ticket
+        and ticket_status.lower() != "closed"
+    ):
+        can_type = True
+
+    return {
+        "id": chat_session.id,
+        "title": (
+            chat_session.title
+            or "New IT Support Chat"
+        ),
+        "issue_type": (
+            chat_session.issue_type
+            or ""
+        ),
+        "status": (
+            chat_session.status
+            or "Active"
+        ),
+        "current_stage": current_stage,
+        "triage_step": (
+            chat_session.triage_step
+            or 0
+        ),
+        "triage_data": triage_data,
+        "triage_summary": (
+            chat_session.triage_summary
+            or ""
+        ),
+        "ticket_id": chat_session.ticket_id,
+        "ticket_number": (
+            ticket.number
+            if ticket
+            else None
+        ),
+        "ticket_status": ticket_status,
+        "ticket_subject": (
+            ticket.subject
+            if ticket
+            else ""
+        ),
+        "ticket_priority": (
+            ticket.priority.priority
+            if ticket and ticket.priority
+            else ""
+        ),
+        "ticket_category": (
+            ticket.category.category
+            if ticket and ticket.category
+            else ""
+        ),
+        "read_only": read_only,
+        "can_type": can_type,
+        "created_at": (
+            chat_session.created_at.strftime(
+                "%d %b %Y %H:%M"
+            )
+            if chat_session.created_at
+            else ""
+        ),
+        "updated_at": (
+            chat_session.updated_at.strftime(
+                "%d %b %Y %H:%M"
+            )
+            if chat_session.updated_at
+            else ""
+        )
+    }
 
 # ============================================================
 # GLOBAL SOCKET HELPERS
@@ -307,22 +670,30 @@ def emit_ticket_comment(ticket, comment, is_attachment=False):
         room=f"ticket_{ticket.id}"
     )
 
-
 def emit_ticket_system(ticket, event_name, message):
     payload = {
         **serialize_ticket(ticket),
         "message": message
     }
 
-    socketio.emit(event_name, payload, room=f"ticket_{ticket.id}")
-    socketio.emit(event_name, payload)
+    # Send ticket-specific event once.
+    socketio.emit(
+        event_name,
+        payload,
+        room=f"ticket_{ticket.id}"
+    )
+
+    # Silent updates for lists, badges, and analytics.
     socketio.emit("global_ticket_updated", payload)
     socketio.emit("sidebar_counts_updated", payload)
     socketio.emit("notification_updated", payload)
     socketio.emit("analytics_updated", payload)
 
     if ticket.author_id:
-        emit_customer_refresh(ticket.author_id, event_name)
+        emit_customer_refresh(
+            ticket.author_id,
+            event_name
+        )
 
 
 # ============================================================
@@ -400,6 +771,14 @@ def dashboard():
 @login_required(role="Customer")
 def my_tickets():
     auto_close_waiting_customer_tickets()
+
+    chat_sessions = (
+        ChatSession.query
+        .filter(ChatSession.user_id == current_user.id)
+        .order_by(ChatSession.updated_at.desc(), ChatSession.created_at.desc())
+        .all()
+    )
+
     tickets = (
         Ticket.query
         .filter(Ticket.author_id == current_user.id)
@@ -408,28 +787,78 @@ def my_tickets():
     )
 
     form = TicketForm()
-    active_ticket = get_active_ticket_for_user(current_user.id)
 
     return render_template(
         "customer/my_tickets.html",
         form=form,
         tickets=tickets,
-        active_ticket=active_ticket
+        chat_sessions=chat_sessions,
+        active_ticket=None
     )
 
+@customer_blueprint.route(
+    "/view-chat/<int:session_id>",
+    methods=["GET"]
+)
+@login_required(role="Customer")
+def view_chat(session_id):
+    chat_session = ChatSession.query.filter_by(
+        id=session_id,
+        user_id=current_user.id
+    ).first()
 
-@customer_blueprint.route("/create-ticket", methods=["GET", "POST"])
+    if not chat_session:
+        flash(
+            "Chat session not found.",
+            "warning"
+        )
+
+        return redirect(
+            url_for("customer.my_tickets")
+        )
+
+    return redirect(
+        url_for(
+            "customer.chat",
+            session_id=chat_session.id
+        )
+    )
+@csrf.exempt
+@customer_blueprint.route("/chat/delete/<int:session_id>", methods=["GET", "POST"])
+@login_required(role="Customer")
+def delete_chat_session_page(session_id):
+    chat_session = ChatSession.query.filter_by(
+        id=session_id,
+        user_id=current_user.id
+    ).first()
+
+    if not chat_session:
+        flash("Chat session not found.", "warning")
+        return redirect(url_for("customer.my_tickets"))
+
+    if chat_session.ticket_id:
+        flash("This chat is linked to a support ticket. Please delete the ticket instead.", "warning")
+        return redirect(url_for("customer.my_tickets"))
+
+    ChatMessage.query.filter_by(
+        session_id=chat_session.id,
+        user_id=current_user.id
+    ).delete()
+
+    db.session.delete(chat_session)
+    db.session.commit()
+
+    flash("Chat session deleted.", "primary")
+    return redirect(url_for("customer.my_tickets"))
+
+
+@customer_blueprint.route(
+    "/create-ticket",
+    methods=["GET", "POST"]
+)
 @login_required(role="Customer")
 def create_ticket():
     auto_close_waiting_customer_tickets()
-    active_ticket = get_active_ticket_for_user(current_user.id)
-
-    if active_ticket:
-        flash(
-            f"You already have an active support ticket #{active_ticket.number}. Please continue that chat first.",
-            "warning"
-        )
-        return redirect(url_for("customer.chat_page"))
 
     form = TicketForm()
 
@@ -438,15 +867,47 @@ def create_ticket():
         attachment = None
         original_f = None
 
+        # ----------------------------------------------------
+        # SAVE OPTIONAL ATTACHMENT
+        # ----------------------------------------------------
+
         if file and file.filename:
-            folder_id = os.path.join(path, "app/static/uploads/attachments", str(current_user.id))
-            os.makedirs(folder_id, exist_ok=True)
+            folder_id = os.path.join(
+                path,
+                "app",
+                "static",
+                "uploads",
+                "attachments",
+                str(current_user.id)
+            )
 
-            original_f = secure_filename(file.filename)
-            _, ext = os.path.splitext(original_f)
-            attachment = secure_filename(uuid.uuid4().hex + ext.lower())
+            os.makedirs(
+                folder_id,
+                exist_ok=True
+            )
 
-            file.save(os.path.join(folder_id, attachment))
+            original_f = secure_filename(
+                file.filename
+            )
+
+            _, ext = os.path.splitext(
+                original_f
+            )
+
+            attachment = secure_filename(
+                uuid.uuid4().hex + ext.lower()
+            )
+
+            file.save(
+                os.path.join(
+                    folder_id,
+                    attachment
+                )
+            )
+
+        # ----------------------------------------------------
+        # CREATE TICKET
+        # ----------------------------------------------------
 
         ticket = Ticket(
             number=random_numbers(),
@@ -464,11 +925,51 @@ def create_ticket():
         db.session.add(ticket)
         db.session.commit()
 
+        # ----------------------------------------------------
+        # SEND TICKET-CREATED EMAIL
+        # ----------------------------------------------------
+
+        email_sent = send_ticket_created_email(
+            current_user,
+            ticket
+        )
+
+        if not email_sent:
+            current_app.logger.error(
+                "Customer ticket-created email failed "
+                "for ticket_id=%s user_id=%s",
+                ticket.id,
+                current_user.id
+            )
+
+        # ----------------------------------------------------
+        # SYSTEM EVENT
+        # ----------------------------------------------------
+
+        log_system_event(
+            event_type="Ticket Created",
+            severity="Info",
+            message=(
+                f"Ticket #{ticket.number} was created "
+                f"by customer {current_user.email}."
+            ),
+            user_id=current_user.id,
+            ticket_id=ticket.id
+        )
+
+        # ----------------------------------------------------
+        # NOTIFY STAFF
+        # ----------------------------------------------------
+
         notify_staff(
             message="created a new support ticket",
             sender_id=current_user.id,
             ticket_id=ticket.id
         )
+
+        # ----------------------------------------------------
+        # REAL-TIME UPDATE
+        # ----------------------------------------------------
 
         emit_global_event(
             "ticket_created",
@@ -476,15 +977,35 @@ def create_ticket():
             "Customer created a new support ticket."
         )
 
-        flash("Ticket has been created. You can continue in chat.", "primary")
-        return redirect(url_for("customer.chat_page"))
+        if email_sent:
+            flash(
+                "Ticket has been created. "
+                "A confirmation email was sent.",
+                "success"
+            )
+        else:
+            flash(
+                "Ticket has been created, but the confirmation "
+                "email could not be sent.",
+                "warning"
+            )
 
-    return render_template("customer/my_tickets.html", form=form, tickets=[], active_ticket=None)
+        return redirect(
+            url_for("customer.chat")
+        )
+
+    return render_template(
+        "customer/my_tickets.html",
+        form=form,
+        tickets=[],
+        active_ticket=None
+    )
 
 
 @customer_blueprint.route("/view-ticket/<int:id>", methods=["GET", "POST"])
 @login_required(role="Customer")
 def view_ticket(id):
+
     ticket = (
         Ticket.query
         .filter(Ticket.author_id == current_user.id)
@@ -506,50 +1027,50 @@ def view_ticket(id):
     form = UpdateTicketForm(category=ticket.category_id)
     comment_form = CommentForm()
 
-    if form.validate_on_submit():
-        if ticket.status_id == get_closed_status_id():
-            flash("Closed tickets cannot be edited.", "warning")
-            return redirect(url_for("customer.view_ticket", id=id))
+    chat_session = ChatSession.query.filter_by(
+        ticket_id=ticket.id,
+        user_id=current_user.id
+    ).first()
 
-        if ticket.category_id != int(form.category.data) and ticket.owner_id is not None:
-            notify_user(
-                message="updated category on ticket",
-                receiver_id=ticket.owner_id,
-                sender_id=current_user.id,
-                ticket_id=ticket.id
-            )
+    # ====================================================
+    # NEW
+    # ====================================================
+    prefill_rating = request.args.get(
+        "rating",
+        type=int
+    )
 
-        ticket.category_id = int(form.category.data)
-        db.session.commit()
+    if prefill_rating not in [1, 2, 3, 4, 5]:
+        prefill_rating = None
+    # ====================================================
 
-        emit_global_event(
-            "ticket_updated",
-            ticket,
-            "Customer updated ticket category."
-        )
-
-        flash("Ticket has been updated.", "primary")
-        return redirect(url_for("customer.view_ticket", id=id))
-    
     existing_rating = CustomerSatisfaction.query.filter_by(
         ticket_id=ticket.id,
         customer_id=current_user.id
     ).first()
 
+    if not existing_rating and chat_session:
+        existing_rating = CustomerSatisfaction.query.filter_by(
+            session_id=chat_session.id,
+            customer_id=current_user.id
+        ).first()
+
     return render_template(
-    "customer/view_ticket.html",
-    form=form,
-    comment_form=comment_form,
-    ticket=ticket,
-    comments=comments,
-    existing_rating=existing_rating
-)
+        "customer/view_ticket.html",
+        form=form,
+        chat_session=chat_session,
+        comment_form=comment_form,
+        ticket=ticket,
+        comments=comments,
+        existing_rating=existing_rating,
+        prefill_rating=prefill_rating
+    )
 
 
 @customer_blueprint.route("/comment-ticket/<int:id>", methods=["GET", "POST"])
 @login_required(role="Customer")
 def comment_ticket(id):
-    return redirect(url_for("customer.chat_page"))
+    return redirect(url_for("customer.chat"))
 
 
 @customer_blueprint.route("/faqs", methods=["GET"])
@@ -559,76 +1080,394 @@ def faqs():
     return render_template("customer/faqs.html", categories=categories)
 
 
-@customer_blueprint.route("/widget-demo", methods=["GET"])
-def widget_demo():
-    return render_template("widget/demo.html")
-
-
-@customer_blueprint.route("/chat", methods=["GET"])
+@customer_blueprint.route(
+    "/chat",
+    methods=["GET"]
+)
 @login_required(role="Customer")
-def chat_page():
+def chat():
     auto_close_waiting_customer_tickets()
-    return render_template("customer/chat.html")
+
+    requested_session_id = request.args.get(
+        "session_id",
+        type=int
+    )
+
+    if requested_session_id:
+        chat_session = ChatSession.query.filter_by(
+            id=requested_session_id,
+            user_id=current_user.id
+        ).first()
+
+        if not chat_session:
+            flash(
+                "The selected chat session could not be found.",
+                "warning"
+            )
+
+            return redirect(
+                url_for("customer.chat")
+            )
+
+    return render_template(
+        "customer/chat.html",
+        requested_session_id=requested_session_id
+    )
+
+
+@customer_blueprint.route("/support-requests", methods=["GET"])
+@login_required(role="Customer")
+def support_requests():
+    return redirect(url_for("customer.chat"))
 
 
 # ============================================================
 # PROFILE / ACCOUNT
 # ============================================================
 
-@customer_blueprint.route("/my-profile", methods=["GET", "POST"])
+@customer_blueprint.route(
+    "/my-profile",
+    methods=["GET", "POST"]
+)
 @login_required(role="Customer")
 def my_profile():
-    user = User.query.filter(User.id == current_user.id).first()
+    user = db.session.get(
+        User,
+        current_user.id
+    )
+
+    if not user:
+        flash(
+            "Your account could not be found.",
+            "danger"
+        )
+
+        return redirect(
+            url_for("auth.logout")
+        )
+
     form = ChangeProfileForm()
 
+    if request.method == "GET":
+        form.name.data = user.name
+
     if form.validate_on_submit():
+        new_name = (
+            form.name.data or ""
+        ).strip()
+
+        if not new_name:
+            flash(
+                "Your name is required.",
+                "danger"
+            )
+
+            return redirect(
+                url_for("customer.my_profile")
+            )
+
+        user.name = new_name
+
         file = form.profile.data
 
         if file and file.filename:
-            filename, ext = os.path.splitext(file.filename)
-            profile = secure_filename(str(user.id) + ext)
-
-            file.save(os.path.join(current_app.config["PROFILE_DIR"], profile))
-
-            user.image = profile
-            db.session.commit()
-
-            emit_global_event(
-                "profile_updated",
-                message="Customer profile updated"
+            os.makedirs(
+                current_app.config["PROFILE_DIR"],
+                exist_ok=True
             )
 
-            flash("Your profile has been changed.", "primary")
-            return redirect(url_for("customer.my_profile"))
+            original_filename = secure_filename(
+                file.filename
+            )
 
-    return render_template("customer/my_profile.html", form=form, user=user)
+            _, extension = os.path.splitext(
+                original_filename
+            )
 
+            extension = extension.lower()
 
-@customer_blueprint.route("/change-password", methods=["GET", "POST"])
+            profile_filename = secure_filename(
+                f"{user.id}_{uuid.uuid4().hex}{extension}"
+            )
+
+            old_image = user.image
+
+            new_image_path = os.path.join(
+                current_app.config["PROFILE_DIR"],
+                profile_filename
+            )
+
+            file.save(
+                new_image_path
+            )
+
+            user.image = profile_filename
+
+            if (
+                old_image
+                and old_image != "default-profile.png"
+                and old_image != profile_filename
+            ):
+                old_image_path = os.path.join(
+                    current_app.config["PROFILE_DIR"],
+                    old_image
+                )
+
+                if os.path.isfile(old_image_path):
+                    try:
+                        os.remove(
+                            old_image_path
+                        )
+
+                    except OSError:
+                        current_app.logger.exception(
+                            "Could not remove old customer "
+                            "profile image for user_id=%s",
+                            user.id
+                        )
+
+        try:
+            db.session.commit()
+
+        except Exception:
+            db.session.rollback()
+
+            current_app.logger.exception(
+                "Customer profile update failed "
+                "for user_id=%s",
+                user.id
+            )
+
+            flash(
+                "Your profile could not be updated.",
+                "danger"
+            )
+
+            return redirect(
+                url_for("customer.my_profile")
+            )
+
+        socketio.emit(
+            "profile_updated",
+            {
+                "user_id": user.id,
+                "name": user.name,
+                "image": user.image,
+                "message": (
+                    "Customer profile updated."
+                )
+            }
+        )
+
+        flash(
+            "Your profile has been updated.",
+            "success"
+        )
+
+        return redirect(
+            url_for("customer.my_profile")
+        )
+
+    return render_template(
+        "customer/my_profile.html",
+        form=form,
+        user=user
+    )
+
+@customer_blueprint.route(
+    "/change-password",
+    methods=["GET", "POST"]
+)
 @login_required(role="Customer")
 def change_password():
-    user = User.query.filter(User.id == current_user.id).first()
+    user = db.session.get(
+        User,
+        current_user.id
+    )
+
+    if not user:
+        flash(
+            "Your account could not be found.",
+            "danger"
+        )
+
+        return redirect(
+            url_for("auth.logout")
+        )
+
     form = ChangePasswordForm()
 
     if form.validate_on_submit():
-        user.password = generate_password_hash(form.password.data)
-        db.session.commit()
-        log_system_event(
-            event_type="Password Changed",
-            severity="Info",
-            message=f"Password changed for {user.email}.",
-            user_id=user.id
+        current_password = (
+            form.current_password.data or ""
         )
 
-        emit_global_event(
+        new_password = (
+            form.password.data or ""
+        )
+
+        if not check_password_hash(
+            user.password,
+            current_password
+        ):
+            flash(
+                "Current password is incorrect.",
+                "danger"
+            )
+
+            return redirect(
+                url_for("customer.change_password")
+            )
+
+        user.password = generate_password_hash(
+            new_password
+        )
+
+        user.failed_login_attempts = 0
+        user.locked_until = None
+
+        if hasattr(user, "updated_at"):
+            user.updated_at = (
+                datetime.datetime.utcnow()
+            )
+
+        try:
+            db.session.commit()
+
+        except Exception:
+            db.session.rollback()
+
+            current_app.logger.exception(
+                "Customer password update failed "
+                "for user_id=%s",
+                user.id
+            )
+
+            flash(
+                "The password could not be updated.",
+                "danger"
+            )
+
+            return redirect(
+                url_for("customer.change_password")
+            )
+
+        socketio.emit(
             "password_updated",
-            message="Customer password updated"
+            {
+                "user_id": user.id,
+                "message": (
+                    "Customer password updated."
+                )
+            }
         )
 
-        flash("Your password has been changed.", "primary")
-        return redirect(url_for("customer.change_password"))
+        flash(
+            "Password updated successfully.",
+            "success"
+        )
 
-    return render_template("customer/change_password.html", form=form)
+        return redirect(
+            url_for("customer.change_password")
+        )
+
+    return render_template(
+        "customer/change_password.html",
+        form=form
+    )
+
+
+@customer_blueprint.route(
+    "/change-email",
+    methods=["GET", "POST"]
+)
+@login_required(role="Customer")
+def change_email():
+    form = ChangeEmailForm()
+
+    if request.method == "GET":
+        form.email.data = (
+            current_user.email
+        )
+
+    if form.validate_on_submit():
+        password = (
+            form.password.data or ""
+        )
+
+        if not check_password_hash(
+            current_user.password,
+            password
+        ):
+            flash(
+                "Password incorrect.",
+                "danger"
+            )
+
+            return redirect(
+                url_for("customer.change_email")
+            )
+
+        new_email = (
+            form.email.data or ""
+        ).strip().lower()
+
+        existing = (
+            User.query
+            .filter(
+                func.lower(User.email)
+                == new_email,
+                User.id != current_user.id
+            )
+            .first()
+        )
+
+        if existing:
+            flash(
+                "Email already exists.",
+                "danger"
+            )
+
+            return redirect(
+                url_for("customer.change_email")
+            )
+
+        current_user.email = new_email
+
+        try:
+            db.session.commit()
+
+        except Exception:
+            db.session.rollback()
+
+            current_app.logger.exception(
+                "Customer email update failed "
+                "for user_id=%s",
+                current_user.id
+            )
+
+            flash(
+                "Your email could not be updated.",
+                "danger"
+            )
+
+            return redirect(
+                url_for("customer.change_email")
+            )
+
+        flash(
+            "Email updated.",
+            "success"
+        )
+
+        return redirect(
+            url_for("customer.my_profile")
+        )
+
+    return render_template(
+        "customer/change_email.html",
+        form=form
+    )
 
 
 # ============================================================
@@ -702,28 +1541,103 @@ def download_attachment(id, filename):
     return send_file(location, as_attachment=True)
 
 
-@customer_blueprint.route("/ticket/delete/<int:uid>/<int:tid>", methods=["GET", "POST"])
+@customer_blueprint.route(
+    "/ticket/delete/<int:uid>/<int:tid>",
+    methods=["GET", "POST"]
+)
 @login_required(role="Customer")
 def delete_ticket(uid, tid):
     ticket = Ticket.query.get_or_404(tid)
 
     if ticket.author_id != current_user.id:
-        flash("Unauthorized access.", "danger")
-        return redirect(url_for("customer.my_tickets"))
+        flash(
+            "Unauthorized access.",
+            "danger"
+        )
+
+        return redirect(
+            url_for("customer.my_tickets")
+        )
 
     if request.method == "POST":
+        # Save all required values before deleting the ticket.
         ticket_id = ticket.id
         ticket_number = ticket.number
+        ticket_subject = ticket.subject or "No subject"
+
+        customer = ticket.author
+
+        # ----------------------------------------------------
+        # SEND DELETION EMAIL BEFORE DATABASE DELETE
+        # ----------------------------------------------------
+
+        email_sent = False
+
+        if customer and customer.email:
+            email_sent = send_ticket_deleted_email(
+                customer,
+                ticket_number=str(ticket_number),
+                ticket_subject=ticket_subject,
+                deleted_by=current_user.name,
+                deleted_ticket_id=None
+            )
+
+            if not email_sent:
+                current_app.logger.error(
+                    "Customer ticket-deleted email failed "
+                    "for ticket_id=%s customer_id=%s",
+                    ticket.id,
+                    ticket.author_id
+                )
+
+        # ----------------------------------------------------
+        # DELETE PHYSICAL ATTACHMENT
+        # ----------------------------------------------------
 
         if ticket.file_link:
-            folder_id = os.path.join(path, "app/static/uploads/attachments", str(uid))
-            file_path = os.path.join(folder_id, ticket.file_link)
+            folder_id = os.path.join(
+                path,
+                "app",
+                "static",
+                "uploads",
+                "attachments",
+                str(uid)
+            )
+
+            file_path = os.path.join(
+                folder_id,
+                ticket.file_link
+            )
 
             if os.path.exists(file_path):
-                os.remove(file_path)
+                try:
+                    os.remove(file_path)
+
+                except OSError as error:
+                    current_app.logger.exception(
+                        "Could not delete attachment for "
+                        "ticket_id=%s: %s",
+                        ticket.id,
+                        error
+                    )
+
+        # ----------------------------------------------------
+        # DELETE DATABASE TICKET
+        # ----------------------------------------------------
 
         db.session.delete(ticket)
         db.session.commit()
+
+        log_system_event(
+            event_type="Ticket Deleted",
+            severity="Warning",
+            message=(
+                f"Ticket #{ticket_number} was deleted "
+                f"by customer {current_user.email}."
+            ),
+            user_id=current_user.id,
+            ticket_id=None
+        )
 
         payload = {
             "ticket_id": ticket_id,
@@ -731,18 +1645,59 @@ def delete_ticket(uid, tid):
             "message": "Ticket deleted by customer."
         }
 
-        socketio.emit("ticket_deleted", payload)
-        socketio.emit("global_ticket_updated", payload)
-        socketio.emit("sidebar_counts_updated", payload)
-        socketio.emit("notification_updated", payload)
-        socketio.emit("analytics_updated", payload)
+        socketio.emit(
+            "ticket_deleted",
+            payload
+        )
 
-        emit_customer_refresh(current_user.id, "ticket_deleted")
+        socketio.emit(
+            "global_ticket_updated",
+            payload
+        )
 
-        flash("Ticket has been deleted.", "primary")
-        return redirect(url_for("customer.my_tickets"))
+        socketio.emit(
+            "sidebar_counts_updated",
+            payload
+        )
 
-    return redirect(url_for("customer.view_ticket", id=tid))
+        socketio.emit(
+            "notification_updated",
+            payload
+        )
+
+        socketio.emit(
+            "analytics_updated",
+            payload
+        )
+
+        emit_customer_refresh(
+            current_user.id,
+            "ticket_deleted"
+        )
+
+        if email_sent:
+            flash(
+                "Ticket has been deleted. "
+                "A confirmation email was sent.",
+                "success"
+            )
+        else:
+            flash(
+                "Ticket has been deleted, but the confirmation "
+                "email could not be sent.",
+                "warning"
+            )
+
+        return redirect(
+            url_for("customer.my_tickets")
+        )
+
+    return redirect(
+        url_for(
+            "customer.view_ticket",
+            id=tid
+        )
+    )
 
 @customer_blueprint.route("/ticket/rate/<int:ticket_id>", methods=["POST"])
 @login_required(role="Customer")
@@ -763,43 +1718,624 @@ def rate_ticket(ticket_id):
         flash("Please select a rating between 1 and 5.", "warning")
         return redirect(url_for("customer.view_ticket", id=ticket.id))
 
+    chat_session = ChatSession.query.filter_by(
+        ticket_id=ticket.id,
+        user_id=current_user.id
+    ).first()
+
     existing_rating = CustomerSatisfaction.query.filter_by(
         ticket_id=ticket.id,
         customer_id=current_user.id
     ).first()
 
+    if not existing_rating and chat_session:
+        existing_rating = CustomerSatisfaction.query.filter_by(
+            session_id=chat_session.id,
+            customer_id=current_user.id
+        ).first()
+
     if existing_rating:
+        existing_rating.ticket_id = ticket.id
+        existing_rating.session_id = chat_session.id if chat_session else None
         existing_rating.rating = rating
         existing_rating.feedback = feedback
+        existing_rating.updated_at = datetime.datetime.utcnow()
     else:
-        satisfaction = CustomerSatisfaction(
+        existing_rating = CustomerSatisfaction(
             ticket_id=ticket.id,
+            session_id=chat_session.id if chat_session else None,
+            customer_id=current_user.id,
+            rating=rating,
+            feedback=feedback
+        )
+        db.session.add(existing_rating)
+
+    save_or_update_rating_message(
+        customer_id=current_user.id,
+        rating=rating,
+        feedback=feedback,
+        ticket_id=ticket.id,
+        session_id=chat_session.id if chat_session else None
+    )
+
+    db.session.commit()
+
+    flash("Thank you. Your rating has been saved.", "success")
+    return redirect(url_for("customer.view_ticket", id=ticket.id))
+
+@csrf.exempt
+@customer_blueprint.route(
+    "/api/ticket/rate/<int:ticket_id>",
+    methods=["POST"]
+)
+@login_required(role="Customer")
+def api_rate_ticket(ticket_id):
+    ticket = (
+        Ticket.query
+        .filter_by(
+            id=ticket_id,
+            author_id=current_user.id
+        )
+        .first()
+    )
+
+    if not ticket:
+        return jsonify({
+            "ok": False,
+            "reason": "ticket_not_found",
+            "message": "Ticket not found."
+        }), 404
+
+    # Only closed tickets should receive feedback.
+    if (
+        ticket.status_id
+        != get_closed_status_id()
+    ):
+        return jsonify({
+            "ok": False,
+            "reason": "ticket_not_closed",
+            "message": (
+                "Feedback can only be submitted "
+                "after the ticket is closed."
+            )
+        }), 400
+
+    data = (
+        request.get_json(
+            silent=True
+        )
+        or {}
+    )
+
+    raw_rating = data.get("rating")
+
+    feedback = (
+        data.get("feedback")
+        or ""
+    ).strip()
+
+    try:
+        rating = int(raw_rating)
+
+    except (TypeError, ValueError):
+        rating = None
+
+    if (
+        rating is None
+        or rating < 1
+        or rating > 5
+    ):
+        return jsonify({
+            "ok": False,
+            "reason": "invalid_rating",
+            "message": (
+                "Please select a rating "
+                "between 1 and 5."
+            )
+        }), 400
+
+    # Get the newest chat session for this ticket.
+    chat_session = (
+        ChatSession.query
+        .filter_by(
+            ticket_id=ticket.id,
+            user_id=current_user.id
+        )
+        .order_by(
+            ChatSession.updated_at.desc(),
+            ChatSession.id.desc()
+        )
+        .first()
+    )
+
+    # First check for a rating linked directly to this ticket.
+    existing_rating = (
+        CustomerSatisfaction.query
+        .filter_by(
+            ticket_id=ticket.id,
+            customer_id=current_user.id
+        )
+        .first()
+    )
+
+    # Also check through the linked chat session.
+    if (
+        not existing_rating
+        and chat_session
+    ):
+        existing_rating = (
+            CustomerSatisfaction.query
+            .filter_by(
+                session_id=chat_session.id,
+                customer_id=current_user.id
+            )
+            .first()
+        )
+
+    # Do not show an editable rating form again.
+    if existing_rating:
+        return jsonify({
+            "ok": True,
+            "already_rated": True,
+            "ticket_id": ticket.id,
+            "rating": existing_rating.rating,
+            "feedback": (
+                existing_rating.feedback
+                or ""
+            ),
+            "message": (
+                "Your feedback has already been saved."
+            )
+        }), 200
+
+    new_rating = CustomerSatisfaction(
+        ticket_id=ticket.id,
+        session_id=(
+            chat_session.id
+            if chat_session
+            else None
+        ),
+        customer_id=current_user.id,
+        rating=rating,
+        feedback=feedback
+    )
+
+    db.session.add(
+        new_rating
+    )
+
+    if chat_session:
+        chat_session.status = "Solved"
+        chat_session.current_stage = "solved"
+        chat_session.updated_at = (
+            datetime.datetime.utcnow()
+        )
+
+    try:
+        save_or_update_rating_message(
+            customer_id=current_user.id,
+            rating=rating,
+            feedback=feedback,
+            ticket_id=ticket.id,
+            session_id=(
+                chat_session.id
+                if chat_session
+                else None
+            )
+        )
+
+        db.session.commit()
+
+    except Exception:
+        db.session.rollback()
+
+        current_app.logger.exception(
+            "Ticket rating save failed "
+            "for ticket_id=%s customer_id=%s",
+            ticket.id,
+            current_user.id
+        )
+
+        return jsonify({
+            "ok": False,
+            "reason": "database_error",
+            "message": (
+                "Your feedback could not be saved. "
+                "Please try again."
+            )
+        }), 500
+
+    payload = {
+        "user_id": current_user.id,
+        "ticket_id": ticket.id,
+        "ticket_number": ticket.number,
+        "rating": rating,
+        "feedback": feedback,
+        "message": (
+            "Thank you. Your rating has been saved."
+        )
+    }
+
+    socketio.emit(
+        "ticket_rating_saved",
+        payload,
+        room=f"user_{current_user.id}"
+    )
+
+    socketio.emit(
+        "global_ticket_updated",
+        payload
+    )
+
+    socketio.emit(
+        "analytics_updated",
+        payload
+    )
+
+    # Keep all chat history visible.
+    # Do not set customer_visible=False.
+    # Do not delete ChatMessage records.
+    # Do not emit customer_chat_cleared.
+
+    return jsonify({
+        "ok": True,
+        "already_rated": False,
+        "ticket_id": ticket.id,
+        "rating": rating,
+        "feedback": feedback,
+        "message": (
+            "Thank you. Your rating has been saved."
+        )
+    }), 200
+
+
+@customer_blueprint.route("/chat/rate/<int:session_id>", methods=["POST"])
+@login_required(role="Customer")
+def rate_chat(session_id):
+    chat_session = ChatSession.query.filter_by(
+        id=session_id,
+        user_id=current_user.id
+    ).first()
+
+    if not chat_session:
+        flash("Chat session not found.", "warning")
+        return redirect(url_for("customer.my_tickets"))
+
+    rating = request.form.get("rating", type=int)
+    feedback = (request.form.get("feedback") or "").strip()
+
+    if not rating or rating < 1 or rating > 5:
+        flash("Please select a rating between 1 and 5.", "warning")
+        return redirect(url_for("customer.view_chat", session_id=chat_session.id))
+
+    existing_rating = CustomerSatisfaction.query.filter_by(
+        session_id=chat_session.id,
+        customer_id=current_user.id
+    ).first()
+
+    if not existing_rating and chat_session.ticket_id:
+        existing_rating = CustomerSatisfaction.query.filter_by(
+            ticket_id=chat_session.ticket_id,
+            customer_id=current_user.id
+        ).first()
+
+    if existing_rating:
+        existing_rating.session_id = chat_session.id
+        existing_rating.ticket_id = chat_session.ticket_id
+        existing_rating.rating = rating
+        existing_rating.feedback = feedback
+        existing_rating.updated_at = datetime.datetime.utcnow()
+    else:
+        existing_rating = CustomerSatisfaction(
+            ticket_id=chat_session.ticket_id,
+            session_id=chat_session.id,
+            customer_id=current_user.id,
+            rating=rating,
+            feedback=feedback
+        )
+        db.session.add(existing_rating)
+
+    chat_session.status = "Solved"
+    chat_session.updated_at = datetime.datetime.utcnow()
+
+    save_or_update_rating_message(
+        customer_id=current_user.id,
+        rating=rating,
+        feedback=feedback,
+        ticket_id=chat_session.ticket_id,
+        session_id=chat_session.id
+    )
+
+    db.session.commit()
+
+    flash("Thank you. Your chat rating has been saved.", "success")
+    return redirect(url_for("customer.view_chat", session_id=chat_session.id))
+
+
+@csrf.exempt
+@customer_blueprint.route(
+    "/api/chat/session/<int:session_id>/rate",
+    methods=["POST"]
+)
+@login_required(role="Customer")
+def api_rate_chat_session(session_id):
+    chat_session = ChatSession.query.filter_by(
+        id=session_id,
+        user_id=current_user.id
+    ).first()
+
+    if not chat_session:
+        return jsonify({
+            "ok": False,
+            "reason": "session_not_found",
+            "message": "Chat session not found."
+        }), 404
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    raw_rating = data.get("rating")
+
+    feedback = (
+        data.get("feedback")
+        or ""
+    ).strip()
+
+    try:
+        rating = int(raw_rating)
+
+    except (TypeError, ValueError):
+        rating = None
+
+    if (
+        rating is None
+        or rating < 1
+        or rating > 5
+    ):
+        return jsonify({
+            "ok": False,
+            "reason": "invalid_rating",
+            "message": (
+                "Please select a rating "
+                "between 1 and 5."
+            )
+        }), 400
+
+    existing_rating = (
+        CustomerSatisfaction.query
+        .filter(
+            CustomerSatisfaction.customer_id
+            == current_user.id,
+            or_(
+                CustomerSatisfaction.session_id
+                == chat_session.id,
+                CustomerSatisfaction.ticket_id
+                == chat_session.ticket_id
+            )
+        )
+        .first()
+    )
+
+    if existing_rating:
+        existing_rating.session_id = (
+            chat_session.id
+        )
+        existing_rating.ticket_id = (
+            chat_session.ticket_id
+        )
+        existing_rating.rating = rating
+        existing_rating.feedback = feedback
+        existing_rating.updated_at = (
+            datetime.datetime.utcnow()
+        )
+
+    else:
+        existing_rating = CustomerSatisfaction(
+            ticket_id=chat_session.ticket_id,
+            session_id=chat_session.id,
             customer_id=current_user.id,
             rating=rating,
             feedback=feedback
         )
 
-        db.session.add(satisfaction)
+        db.session.add(
+            existing_rating
+        )
+
+    chat_session.status = "Solved"
+    chat_session.current_stage = "solved"
+    chat_session.updated_at = (
+        datetime.datetime.utcnow()
+    )
+
+    ChatMessage.query.filter(
+        ChatMessage.session_id
+        == chat_session.id,
+        ChatMessage.user_id
+        == current_user.id,
+        ChatMessage.resolution_status
+        == "Pending"
+    ).update({
+        "resolution_status": "Solved"
+    }, synchronize_session=False)
+
+    save_or_update_rating_message(
+        customer_id=current_user.id,
+        rating=rating,
+        feedback=feedback,
+        ticket_id=chat_session.ticket_id,
+        session_id=chat_session.id
+    )
 
     db.session.commit()
 
-    flash("Thank you for your feedback.", "success")
-    return redirect(url_for("customer.view_ticket", id=ticket.id))
+    emit_customer_refresh(
+        current_user.id,
+        "chat_rated"
+    )
+
+    return jsonify({
+        "ok": True,
+        "message": (
+            "Rating saved successfully. "
+            "This chat is now complete."
+        ),
+        "rating": rating,
+        "feedback": feedback,
+        "session": serialize_chat_session(
+            chat_session
+        )
+    }), 200
+
+
+# ============================================================
+# TRIAGE CLASSIFICATION
+# ============================================================
+
+def classify_it_issue(issue_text):
+    """
+    Automatically determine the ticket category and priority
+    based on the customer's issue description.
+    """
+
+    text = (issue_text or "").lower()
+
+    # -----------------------------
+    # CATEGORY
+    # -----------------------------
+
+    category = "General"
+
+    if any(word in text for word in [
+        "password",
+        "login",
+        "signin",
+        "account",
+        "authentication"
+    ]):
+        category = "Account"
+
+    elif any(word in text for word in [
+        "wifi",
+        "internet",
+        "network",
+        "vpn",
+        "connection"
+    ]):
+        category = "Network"
+
+    elif any(word in text for word in [
+        "printer",
+        "scanner",
+        "keyboard",
+        "mouse",
+        "monitor",
+        "hardware"
+    ]):
+        category = "Hardware"
+
+    elif any(word in text for word in [
+        "email",
+        "outlook",
+        "office",
+        "excel",
+        "word",
+        "teams"
+    ]):
+        category = "Software"
+
+    elif any(word in text for word in [
+        "virus",
+        "malware",
+        "hack",
+        "security",
+        "phishing"
+    ]):
+        category = "Security"
+
+    # -----------------------------
+    # PRIORITY
+    # -----------------------------
+
+    priority = "Medium"
+
+    if any(word in text for word in [
+        "urgent",
+        "critical",
+        "emergency",
+        "cannot work",
+        "system down",
+        "server down"
+    ]):
+        priority = "High"
+
+    elif any(word in text for word in [
+        "minor",
+        "question",
+        "how to",
+        "information",
+        "help"
+    ]):
+        priority = "Low"
+
+    return category, priority
+
 # ============================================================
 # AI / FAQ HELPERS
 # ============================================================
 
-def find_related_faqs(user_text: str, limit=5):
-    text = (user_text or "").strip().lower()
-
-    if not text:
-        return []
+def calculate_match_score(text, issue_type, title, body="", tags="", category=""):
+    text = (text or "").lower()
+    issue_type = (issue_type or "").lower()
+    title = (title or "").lower()
+    body = (body or "").lower()
+    tags = (tags or "").lower()
+    category = (category or "").lower()
 
     words = [
         word.strip()
-        for word in text.replace("?", " ").replace(",", " ").split()
+        for word in text.replace("?", " ").replace(",", " ").replace("/", " ").split()
         if len(word.strip()) >= 3
     ]
+
+    score = 0
+
+    if issue_type and issue_type in category:
+        score += 15
+
+    if issue_type and issue_type in title:
+        score += 10
+
+    if text and text in title:
+        score += 12
+
+    if text and text in tags:
+        score += 10
+
+    if text and text in category:
+        score += 8
+
+    for word in words:
+        if word in title:
+            score += 6
+
+        if word in tags:
+            score += 5
+
+        if word in category:
+            score += 4
+
+        if word in body:
+            score += 2
+
+    return score
+
+def find_related_faqs(user_text: str, issue_type="", limit=5):
+    text = (user_text or "").strip()
+
+    if not text:
+        return []
 
     faqs = (
         FAQ.query
@@ -811,31 +2347,16 @@ def find_related_faqs(user_text: str, limit=5):
     scored = []
 
     for faq in faqs:
-        question = (faq.question or "").lower()
-        answer = (faq.answer or "").lower()
-        tags = (faq.tags or "").lower()
-        category = faq.category.category.lower() if faq.category else ""
+        category_name = faq.category.category if faq.category else ""
 
-        score = 0
-
-        if text in question:
-            score += 10
-
-        if text in tags:
-            score += 8
-
-        if text in category:
-            score += 6
-
-        for word in words:
-            if word in question:
-                score += 4
-            if word in tags:
-                score += 3
-            if word in category:
-                score += 2
-            if word in answer:
-                score += 1
+        score = calculate_match_score(
+            text=text,
+            issue_type=issue_type,
+            title=faq.question,
+            body=faq.answer,
+            tags=faq.tags,
+            category=category_name
+        )
 
         if score > 0:
             scored.append((score, faq))
@@ -848,10 +2369,138 @@ def find_related_faqs(user_text: str, limit=5):
             "question": faq.question,
             "answer": faq.answer,
             "category": faq.category.category if faq.category else "",
-            "tags": faq.tags or ""
+            "tags": faq.tags or "",
+            "score": score
         }
         for score, faq in scored[:limit]
     ]
+
+def find_related_knowledge_articles(user_text: str, issue_type="", limit=5):
+    text = (user_text or "").strip()
+
+    if not text:
+        return []
+
+    articles = (
+        KnowledgeArticle.query
+        .filter(KnowledgeArticle.is_active == True)
+        .order_by(KnowledgeArticle.id.desc())
+        .all()
+    )
+
+    scored = []
+
+    for article in articles:
+        category_name = article.category.category if article.category else ""
+
+        score = calculate_match_score(
+            text=text,
+            issue_type=issue_type,
+            title=article.title,
+            body=article.content,
+            tags=article.tags,
+            category=category_name
+        )
+
+        if score > 0:
+            scored.append((score, article))
+
+    scored.sort(key=lambda item: item[0], reverse=True)
+
+    return [
+        {
+            "id": article.id,
+            "title": article.title,
+            "content": article.content[:1000] if article.content else "",
+            "category": article.category.category if article.category else "",
+            "tags": article.tags or "",
+            "score": score
+        }
+        for score, article in scored[:limit]
+    ]
+
+def build_faq_context(faqs):
+    if not faqs:
+        return "No matching FAQs found."
+
+    return "\n\n".join([
+        f"""
+FAQ Match Score: {faq.get("score", 0)}
+FAQ Category: {faq.get("category", "")}
+FAQ Question: {faq.get("question", "")}
+FAQ Answer: {faq.get("answer", "")}
+""".strip()
+        for faq in faqs
+    ])
+
+
+def build_knowledge_context(articles):
+    if not articles:
+        return "No matching Knowledge Base articles found."
+
+    return "\n\n".join([
+        f"""
+Knowledge Match Score: {article.get("score", 0)}
+Knowledge Category: {article.get("category", "")}
+Article Title: {article.get("title", "")}
+Article Content: {article.get("content", "")}
+""".strip()
+        for article in articles
+    ])
+
+def ask_openai_it_triage(user_text, triage_summary="", faqs=None, articles=None, language="en"):
+    faqs = faqs or []
+    articles = articles or []
+
+    faq_text = "\n\n".join([
+        f"FAQ Question: {faq.get('question')}\nFAQ Answer: {faq.get('answer')}"
+        for faq in faqs
+    ])
+
+    kb_text = "\n\n".join([
+        f"Knowledge Base Title: {article.get('title')}\nContent: {article.get('content')}"
+        for article in articles
+    ])
+
+    setting = ChatbotSetting.query.first()
+
+    if not setting:
+        setting = ChatbotSetting()
+        db.session.add(setting)
+        db.session.commit()
+
+    context_prompt = f"""
+You are an AI-powered IT Service Desk assistant.
+
+Use the available FAQ and Knowledge Base content first.
+If the FAQ or Knowledge Base content does not fully answer the issue, provide a safe troubleshooting answer using general IT support knowledge.
+
+Triage Summary:
+{triage_summary or "No triage summary provided."}
+
+Relevant FAQs:
+{faq_text or "No matching FAQs found."}
+
+Relevant Knowledge Base Articles:
+{kb_text or "No matching Knowledge Base articles found."}
+
+Customer Issue:
+{user_text}
+
+Response rules:
+- Give a clear answer.
+- Use step-by-step troubleshooting.
+- Keep it practical.
+- Do not make up company-specific policies.
+- If this requires account access, admin permission, security investigation, or hardware replacement, say that support staff may need to assist.
+- End by asking the customer to confirm whether this solved the issue.
+""".strip()
+
+    return ask_openai_chat(
+        context_prompt,
+        setting=setting,
+        language=language
+    )
 
 def normalise_chat_language(language):
     if language == "ne":
@@ -955,7 +2604,9 @@ def save_chat_message(
     ai_used=False,
     escalated=False,
     customer_visible=True,
-    ticket_id=None
+    ticket_id=None,
+    session_id=None,
+    resolution_status="Pending"
 ):
     if not user_id:
         return None
@@ -963,6 +2614,7 @@ def save_chat_message(
     try:
         chat = ChatMessage(
             user_id=user_id,
+            session_id=session_id,
             ticket_id=ticket_id,
             role=role,
             message=message,
@@ -970,12 +2622,22 @@ def save_chat_message(
             ai_used=ai_used,
             escalated=escalated,
             guest_user=False,
-            customer_visible=customer_visible
+            customer_visible=customer_visible,
+            resolution_status=resolution_status
         )
 
         db.session.add(chat)
-        db.session.commit()
 
+        if session_id:
+            chat_session = ChatSession.query.filter_by(
+                id=session_id,
+                user_id=user_id
+            ).first()
+
+            if chat_session:
+                chat_session.updated_at = datetime.datetime.utcnow()
+
+        db.session.commit()
         return chat
 
     except Exception as e:
@@ -1025,6 +2687,735 @@ def needs_human_escalation(user_message: str, ai_reply: str) -> bool:
 # ============================================================
 # CUSTOMER API
 # ============================================================
+@csrf.exempt
+@customer_blueprint.route(
+    "/api/chat/session/<int:session_id>/triage-progress",
+    methods=["POST"]
+)
+@login_required(role="Customer")
+def api_update_chat_triage_progress(session_id):
+    chat_session = ChatSession.query.filter_by(
+        id=session_id,
+        user_id=current_user.id
+    ).first()
+
+    if not chat_session:
+        return jsonify({
+            "ok": False,
+            "reason": "session_not_found",
+            "message": "Chat session not found."
+        }), 404
+
+    if chat_session.current_stage in {
+        "solved",
+        "closed"
+    }:
+        return jsonify({
+            "ok": False,
+            "reason": "session_read_only",
+            "message": "This chat is read-only."
+        }), 400
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    raw_step = data.get(
+        "triage_step",
+        chat_session.triage_step or 0
+    )
+
+    try:
+        triage_step = int(raw_step)
+
+    except (TypeError, ValueError):
+        return jsonify({
+            "ok": False,
+            "reason": "invalid_triage_step"
+        }), 400
+
+    triage_data = data.get(
+        "triage_data"
+    ) or {}
+
+    if not isinstance(triage_data, dict):
+        return jsonify({
+            "ok": False,
+            "reason": "invalid_triage_data"
+        }), 400
+
+    issue_type = (
+        data.get("issue_type")
+        or triage_data.get("issue_type")
+        or chat_session.issue_type
+        or ""
+    ).strip()
+
+    stage = (
+        data.get("current_stage")
+        or "triage"
+    ).strip().lower()
+
+    allowed_stages = {
+        "triage",
+        "processing_answer",
+        "awaiting_resolution",
+        "awaiting_rating",
+        "ticket_created",
+        "solved",
+        "closed"
+    }
+
+    if stage not in allowed_stages:
+        stage = "triage"
+
+    chat_session.issue_type = issue_type
+    chat_session.triage_step = max(
+        0,
+        triage_step
+    )
+    chat_session.triage_data = json.dumps(
+        triage_data
+    )
+    chat_session.current_stage = stage
+    chat_session.updated_at = (
+        datetime.datetime.utcnow()
+    )
+
+    if stage == "triage":
+        chat_session.status = "Triage"
+
+    elif stage == "processing_answer":
+        chat_session.status = "Processing"
+
+    elif stage == "awaiting_resolution":
+        chat_session.status = "AI Answered"
+
+    elif stage == "awaiting_rating":
+        chat_session.status = "Awaiting Rating"
+
+    elif stage == "ticket_created":
+        chat_session.status = "Ticket Created"
+
+    elif stage == "solved":
+        chat_session.status = "Solved"
+
+    elif stage == "closed":
+        chat_session.status = "Closed"
+
+    db.session.commit()
+
+    return jsonify({
+        "ok": True,
+        "session": serialize_chat_session(
+            chat_session
+        )
+    }), 200
+
+@csrf.exempt
+@customer_blueprint.route(
+    "/api/chat/session/<int:session_id>/state",
+    methods=["POST"]
+)
+@login_required(role="Customer")
+def api_update_chat_session_state(session_id):
+    chat_session = ChatSession.query.filter_by(
+        id=session_id,
+        user_id=current_user.id
+    ).first()
+
+    if not chat_session:
+        return jsonify({
+            "ok": False,
+            "reason": "session_not_found"
+        }), 404
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    current_stage = (
+        data.get("current_stage")
+        or ""
+    ).strip().lower()
+
+    allowed_stages = {
+        "triage",
+        "processing_answer",
+        "awaiting_resolution",
+        "awaiting_rating",
+        "ticket_created",
+        "solved",
+        "closed"
+    }
+
+    if current_stage not in allowed_stages:
+        return jsonify({
+            "ok": False,
+            "reason": "invalid_stage"
+        }), 400
+
+    status_map = {
+        "triage": "Triage",
+        "processing_answer": "Processing",
+        "awaiting_resolution": "AI Answered",
+        "awaiting_rating": "Awaiting Rating",
+        "ticket_created": "Ticket Created",
+        "solved": "Solved",
+        "closed": "Closed"
+    }
+
+    chat_session.current_stage = current_stage
+    chat_session.status = status_map[
+        current_stage
+    ]
+    chat_session.updated_at = (
+        datetime.datetime.utcnow()
+    )
+
+    db.session.commit()
+
+    return jsonify({
+        "ok": True,
+        "session": serialize_chat_session(
+            chat_session
+        )
+    }), 200
+
+
+
+@csrf.exempt
+@customer_blueprint.route(
+    "/api/chat/session/<int:session_id>/triage-answer",
+    methods=["POST"]
+)
+@login_required(role="Customer")
+def api_chat_session_triage_answer(session_id):
+    chat_session = ChatSession.query.filter_by(
+        id=session_id,
+        user_id=current_user.id
+    ).first()
+
+    if not chat_session:
+        return jsonify({
+            "ok": False,
+            "reason": "session_not_found"
+        }), 404
+
+    if chat_session.current_stage in {
+        "solved",
+        "closed",
+        "ticket_created"
+    }:
+        return jsonify({
+            "ok": False,
+            "reason": "invalid_session_stage",
+            "message": (
+                "This chat cannot generate another "
+                "AI answer in its current state."
+            )
+        }), 400
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    triage_summary = (
+        data.get("triage_summary")
+        or ""
+    ).strip()
+
+    issue_type = (
+        data.get("issue_type")
+        or chat_session.issue_type
+        or ""
+    ).strip()
+
+    if not triage_summary:
+        return jsonify({
+            "ok": False,
+            "reason": "missing_triage_summary"
+        }), 400
+
+    chat_session.current_stage = (
+        "processing_answer"
+    )
+    chat_session.status = "Processing"
+    chat_session.triage_summary = (
+        triage_summary
+    )
+    chat_session.updated_at = (
+        datetime.datetime.utcnow()
+    )
+
+    db.session.commit()
+
+    search_text = (
+        f"{issue_type}\n"
+        f"{triage_summary}"
+    )
+
+    related_faqs = find_related_faqs(
+        search_text,
+        issue_type=issue_type,
+        limit=5
+    )
+
+    related_articles = (
+        find_related_knowledge_articles(
+            search_text,
+            issue_type=issue_type,
+            limit=5
+        )
+    )
+
+    answer_source = "ai"
+    ai_reply = ""
+
+    strong_faq_match = bool(
+        related_faqs
+        and related_faqs[0].get(
+            "score",
+            0
+        ) >= 25
+    )
+
+    strong_kb_match = bool(
+        related_articles
+        and related_articles[0].get(
+            "score",
+            0
+        ) >= 25
+    )
+
+    try:
+        if strong_faq_match:
+            best_faq = related_faqs[0]
+
+            ai_reply = f"""
+<strong>FAQ Answer Found</strong><br><br>
+<strong>{best_faq["question"]}</strong><br><br>
+{best_faq["answer"]}
+""".strip()
+
+            answer_source = "faq"
+
+        elif strong_kb_match:
+            best_article = related_articles[0]
+
+            ai_reply = f"""
+<strong>Knowledge Base Answer Found</strong><br><br>
+<strong>{best_article["title"]}</strong><br><br>
+{best_article["content"]}
+""".strip()
+
+            answer_source = "knowledge_base"
+
+        else:
+            ai_result = ask_chatgpt(
+                message=(
+                    issue_type
+                    or "IT Support"
+                ),
+                triage_context=triage_summary,
+                faq_context=build_faq_context(
+                    related_faqs
+                ),
+                knowledge_context=(
+                    build_knowledge_context(
+                        related_articles
+                    )
+                )
+            )
+
+            if ai_result.get("ok"):
+                ai_reply = (
+                    ai_result.get("answer")
+                    or "No AI answer was generated."
+                )
+
+            else:
+                ai_reply = (
+                    "AI is temporarily unavailable. "
+                    "Please create a support ticket."
+                )
+
+            answer_source = "ai"
+
+    except Exception as error:
+        current_app.logger.exception(
+            "IT triage answer failed for "
+            "session_id=%s: %s",
+            chat_session.id,
+            error
+        )
+
+        ai_reply = (
+            "AI is temporarily unavailable. "
+            "Please create a support ticket."
+        )
+        answer_source = "ai"
+
+    assistant_message = ChatMessage(
+        user_id=current_user.id,
+        session_id=chat_session.id,
+        ticket_id=chat_session.ticket_id,
+        role="assistant",
+        message=ai_reply,
+        ai_used=(
+            answer_source == "ai"
+        ),
+        faq_matched=(
+            answer_source == "faq"
+        ),
+        escalated=False,
+        guest_user=False,
+        customer_visible=True,
+        resolution_status="Pending"
+    )
+
+    db.session.add(
+        assistant_message
+    )
+
+    chat_session.current_stage = (
+        "awaiting_resolution"
+    )
+    chat_session.status = "AI Answered"
+    chat_session.triage_summary = (
+        triage_summary
+    )
+    chat_session.updated_at = (
+        datetime.datetime.utcnow()
+    )
+
+    db.session.commit()
+
+    emit_customer_refresh(
+        current_user.id,
+        "triage_answer_ready"
+    )
+
+    return jsonify({
+        "ok": True,
+        "reply": ai_reply,
+        "source": answer_source,
+        "faqs": related_faqs,
+        "articles": related_articles,
+        "ask_resolved": True,
+        "session": serialize_chat_session(
+            chat_session
+        ),
+        "chat": serialize_chat_message(
+            assistant_message
+        )
+    }), 200
+
+@csrf.exempt
+@customer_blueprint.route("/api/chat/session/<int:session_id>/message", methods=["POST"])
+@login_required(role="Customer")
+def api_save_chat_session_message(session_id):
+    chat_session = ChatSession.query.filter_by(
+        id=session_id,
+        user_id=current_user.id
+    ).first()
+
+    if not chat_session:
+        return jsonify({
+            "ok": False,
+            "reason": "session_not_found"
+        }), 404
+
+    data = request.get_json(silent=True) or {}
+
+    role = (data.get("role") or "system").strip()
+    message = (data.get("message") or "").strip()
+    ticket_id = data.get("ticket_id")
+
+    if not message:
+        return jsonify({
+            "ok": False,
+            "reason": "empty_message"
+        }), 400
+
+    chat = save_chat_message(
+        user_id=current_user.id,
+        session_id=chat_session.id,
+        ticket_id=ticket_id,
+        role=role,
+        message=message,
+        resolution_status=data.get("resolution_status") or "Active",
+        faq_matched=data.get("faq_matched") == True,
+        ai_used=data.get("ai_used") == True,
+        escalated=data.get("escalated") == True
+    )
+
+    return jsonify({
+        "ok": True,
+        "chat": serialize_chat_message(chat)
+    }), 200
+
+@csrf.exempt
+@customer_blueprint.route(
+    "/api/chat/session/new",
+    methods=["POST"]
+)
+@login_required(role="Customer")
+def api_create_chat_session():
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    title = (
+        data.get("title")
+        or "New IT Support Chat"
+    ).strip()
+
+    issue_type = (
+        data.get("issue_type")
+        or ""
+    ).strip()
+
+    initial_triage_data = {
+        "issue_type": issue_type,
+        "affected_users": "",
+        "impact": "",
+        "urgency": "",
+        "device": "",
+        "error_message": "",
+        "tried_steps": "",
+        "details": ""
+    }
+
+    chat_session = ChatSession(
+        user_id=current_user.id,
+        title=title,
+        issue_type=issue_type,
+        status="Triage",
+        current_stage="triage",
+        triage_step=0,
+        triage_data=json.dumps(
+            initial_triage_data
+        ),
+        triage_summary=None
+    )
+
+    db.session.add(
+        chat_session
+    )
+    db.session.flush()
+
+    start_message = ChatMessage(
+        user_id=current_user.id,
+        session_id=chat_session.id,
+        ticket_id=None,
+        role="system",
+        message=(
+            f"New IT support chat started. "
+            f"Issue type: "
+            f"{issue_type or 'Not selected'}"
+        ),
+        resolution_status="Active",
+        customer_visible=True,
+        faq_matched=False,
+        ai_used=False,
+        escalated=False,
+        guest_user=False
+    )
+
+    db.session.add(
+        start_message
+    )
+    db.session.commit()
+
+    return jsonify({
+        "ok": True,
+        "session": serialize_chat_session(
+            chat_session
+        ),
+        "start_message": serialize_chat_message(
+            start_message
+        )
+    }), 200
+
+
+@csrf.exempt
+@customer_blueprint.route("/api/chat/sessions", methods=["GET"])
+@login_required(role="Customer")
+def api_chat_sessions():
+    search = (request.args.get("search") or "").strip()
+
+    query = ChatSession.query.filter_by(user_id=current_user.id)
+
+    if search:
+        query = query.filter(
+            or_(
+                ChatSession.title.ilike(f"%{search}%"),
+                ChatSession.issue_type.ilike(f"%{search}%"),
+                ChatSession.status.ilike(f"%{search}%"),
+                ChatSession.triage_summary.ilike(f"%{search}%")
+            )
+        )
+
+    sessions = (
+        query
+        .order_by(ChatSession.updated_at.desc(), ChatSession.created_at.desc())
+        .all()
+    )
+
+    return jsonify({
+        "ok": True,
+        "sessions": [serialize_chat_session(s) for s in sessions]
+    }), 200
+
+@csrf.exempt
+@customer_blueprint.route(
+    "/api/chat/session/<int:session_id>",
+    methods=["GET"]
+)
+@login_required(role="Customer")
+def api_get_chat_session(session_id):
+    chat_session = ChatSession.query.filter_by(
+        id=session_id,
+        user_id=current_user.id
+    ).first()
+
+    if not chat_session:
+        return jsonify({
+            "ok": False,
+            "reason": "session_not_found",
+            "message": "Chat session not found."
+        }), 404
+
+    ticket = None
+    existing_rating = None
+
+    if chat_session.ticket_id:
+        ticket = Ticket.query.filter_by(
+            id=chat_session.ticket_id,
+            author_id=current_user.id
+        ).first()
+
+        existing_rating = (
+            CustomerSatisfaction.query
+            .filter(
+                CustomerSatisfaction.customer_id
+                == current_user.id,
+                or_(
+                    CustomerSatisfaction.session_id
+                    == chat_session.id,
+                    CustomerSatisfaction.ticket_id
+                    == chat_session.ticket_id
+                )
+            )
+            .first()
+        )
+
+        if (
+            ticket
+            and ticket.status
+            and ticket.status.status.lower() == "closed"
+        ):
+
+            if existing_rating:
+                chat_session.current_stage = "solved"
+                chat_session.status = "Solved"
+            else:
+                chat_session.current_stage = "closed"
+                chat_session.status = "Closed"
+
+            db.session.commit()
+
+    messages = (
+        ChatMessage.query
+        .filter(
+            ChatMessage.session_id == chat_session.id,
+            ChatMessage.user_id == current_user.id,
+            ChatMessage.customer_visible == True
+        )
+        .order_by(
+            ChatMessage.created_at.asc(),
+            ChatMessage.id.asc()
+        )
+        .all()
+    )
+
+    comments = []
+
+    if ticket:
+        comments = (
+            Comment.query
+            .filter(
+                Comment.ticket_id == ticket.id
+            )
+            .order_by(
+                Comment.created_at.asc(),
+                Comment.id.asc()
+            )
+            .all()
+        )
+
+    return jsonify({
+        "ok": True,
+        "session": serialize_chat_session(chat_session),
+
+        "messages": [
+            serialize_chat_message(message)
+            for message in messages
+        ],
+
+        "comments": [
+            serialize_comment(comment)
+            for comment in comments
+        ],
+
+        "already_rated": existing_rating is not None,
+
+        "ticket_rating": (
+            {
+                "id": existing_rating.id,
+                "rating": existing_rating.rating,
+                "feedback": existing_rating.feedback or "",
+                "created_at":
+                    existing_rating.created_at.strftime(
+                        "%d %b %Y %H:%M"
+                    )
+                    if existing_rating.created_at
+                    else ""
+            }
+            if existing_rating
+            else None
+        )
+    }), 200
+
+
+@csrf.exempt
+@customer_blueprint.route("/api/chat/session/<int:session_id>/delete", methods=["POST", "DELETE"])
+@login_required(role="Customer")
+def api_delete_chat_session(session_id):
+    chat_session = ChatSession.query.filter_by(
+        id=session_id,
+        user_id=current_user.id
+    ).first()
+
+    if not chat_session:
+        return jsonify({
+            "ok": False,
+            "reason": "session_not_found"
+        }), 404
+
+    ChatMessage.query.filter_by(
+        session_id=chat_session.id,
+        user_id=current_user.id
+    ).delete()
+
+    db.session.delete(chat_session)
+    db.session.commit()
+
+    return jsonify({
+        "ok": True,
+        "deleted": True
+    }), 200
 
 @csrf.exempt
 @customer_blueprint.route("/api/me", methods=["GET"])
@@ -1123,7 +3514,14 @@ def api_chat():
     user_message = (data.get("message") or "").strip()
     skip_faq = data.get("skip_faq") == True
     language = normalise_chat_language(data.get("language", "en"))
-    user_id = current_user.id if current_user.is_authenticated else None
+    if not current_user.is_authenticated:
+        return jsonify({
+            "ok": False,
+            "needs_login": True,
+            "reply": "Please log in to use the IT support chatbot."
+        }), 401
+
+    user_id = current_user.id
 
     if not user_message:
         return jsonify({
@@ -1360,96 +3758,133 @@ def api_chat_faq_selected():
     }), 200
 
 @csrf.exempt
-@customer_blueprint.route("/api/chat/resolution", methods=["POST"])
+@customer_blueprint.route(
+    "/api/chat/resolution",
+    methods=["POST"]
+)
+@login_required(role="Customer")
 def api_chat_resolution():
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(
+        silent=True
+    ) or {}
 
-    solved = data.get("solved") == True
-    source_type = (data.get("source_type") or "").strip()
-    original_message = (data.get("original_message") or "").strip()
+    solved = (
+        data.get("solved") is True
+    )
 
-    user_id = current_user.id if current_user.is_authenticated else None
+    session_id = data.get(
+        "session_id"
+    )
+
+    source_type = (
+        data.get("source_type")
+        or ""
+    ).strip()
+
+    original_message = (
+        data.get("original_message")
+        or ""
+    ).strip()
+
+    chat_session = None
+
+    if session_id:
+        chat_session = ChatSession.query.filter_by(
+            id=session_id,
+            user_id=current_user.id
+        ).first()
+
+        if not chat_session:
+            return jsonify({
+                "ok": False,
+                "reason": "session_not_found"
+            }), 404
 
     if solved:
-        if user_id:
-            ChatMessage.query.filter(
-                ChatMessage.user_id == user_id,
-                ChatMessage.customer_visible == True,
-                ChatMessage.resolution_status == "Pending"
-            ).update({
-                "resolution_status": "Solved",
-                "customer_visible": False
-            })
-
-            db.session.commit()
-
-            emit_customer_chat_event(
-                user_id,
-                "customer_chat_cleared",
-                {
-                    "message": "✅ Thank you. I’m glad your issue was solved. You can start a new chat anytime."
-                }
+        if chat_session:
+            chat_session.current_stage = (
+                "awaiting_rating"
+            )
+            chat_session.status = (
+                "Awaiting Rating"
+            )
+            chat_session.updated_at = (
+                datetime.datetime.utcnow()
             )
 
-        return jsonify({
-            "ok": True,
-            "cleared": True,
-            "message": "✅ Thank you. I’m glad your issue was solved. You can start a new chat anytime."
-        }), 200
-
-    if user_id:
         ChatMessage.query.filter(
-            ChatMessage.user_id == user_id,
-            ChatMessage.customer_visible == True,
-            ChatMessage.resolution_status == "Pending"
+            ChatMessage.user_id
+            == current_user.id,
+            ChatMessage.session_id
+            == (
+                chat_session.id
+                if chat_session
+                else None
+            ),
+            ChatMessage.resolution_status
+            == "Pending"
         ).update({
-            "resolution_status": "Not Solved"
-        })
+            "resolution_status": "Solved"
+        }, synchronize_session=False)
 
         db.session.commit()
 
+        return jsonify({
+            "ok": True,
+            "cleared": False,
+            "next_step": "rating",
+            "message": (
+                "Please rate your support experience."
+            ),
+            "session": (
+                serialize_chat_session(
+                    chat_session
+                )
+                if chat_session
+                else None
+            )
+        }), 200
+
+    if chat_session:
+        chat_session.current_stage = (
+            "awaiting_resolution"
+        )
+        chat_session.status = "AI Answered"
+        chat_session.updated_at = (
+            datetime.datetime.utcnow()
+        )
+
+        ChatMessage.query.filter(
+            ChatMessage.session_id
+            == chat_session.id,
+            ChatMessage.user_id
+            == current_user.id,
+            ChatMessage.resolution_status
+            == "Pending"
+        ).update({
+            "resolution_status": "Not Solved"
+        }, synchronize_session=False)
+
+    db.session.commit()
+
     if source_type == "faq":
-        progress_message = "Okay, I’ll try the AI assistant for you."
-
-        if user_id:
-            progress_chat = save_chat_message(
-                user_id=user_id,
-                role="system",
-                message=progress_message
-            )
-
-            emit_customer_chat_event(
-                user_id,
-                "customer_resolution_progress",
-                {
-                    "source_type": "faq",
-                    "original_message": original_message,
-                    "message": progress_message,
-                    "chat": serialize_chat_message(progress_chat)
-                }
-            )
-
         return jsonify({
             "ok": True,
             "next_step": "ai",
-            "message": progress_message,
+            "message": (
+                "Okay, I’ll try the AI assistant "
+                "for you."
+            ),
             "original_message": original_message
         }), 200
-
-    if user_id:
-        emit_customer_chat_event(
-            user_id,
-            "customer_human_prompt",
-            {
-                "original_message": original_message,
-                "message": "Would you like to talk to human support?"
-            }
-        )
 
     return jsonify({
         "ok": True,
         "next_step": "human",
-        "message": "Would you like to talk to human support?",
+        "message": (
+            "You can now create a support ticket "
+            "for human assistance."
+        ),
         "original_message": original_message
     }), 200
 
@@ -1531,15 +3966,851 @@ def api_ticket_status(ticket_id):
 
 
 @csrf.exempt
-@customer_blueprint.route("/api/ticket/comments/<int:ticket_id>", methods=["GET"])
+@customer_blueprint.route(
+    "/api/ticket/comments/<int:ticket_id>",
+    methods=["GET"]
+)
+@login_required(role="Customer")
 def api_ticket_comments(ticket_id):
-    if not current_user.is_authenticated:
-        return jsonify({"ok": False, "reason": "not_authenticated"}), 401
-
-    ticket = Ticket.query.filter_by(id=ticket_id, author_id=current_user.id).first()
+    ticket = Ticket.query.filter_by(
+        id=ticket_id,
+        author_id=current_user.id
+    ).first()
 
     if not ticket:
-        return jsonify({"ok": False, "reason": "not_found"}), 404
+        return jsonify({
+            "ok": False,
+            "reason": "not_found",
+            "message": "Ticket not found."
+        }), 404
+
+    comments = (
+        Comment.query
+        .filter(Comment.ticket_id == ticket.id)
+        .order_by(Comment.created_at.asc())
+        .all()
+    )
+
+    chat_session = ChatSession.query.filter_by(
+        ticket_id=ticket.id,
+        user_id=current_user.id
+    ).first()
+
+    existing_rating = CustomerSatisfaction.query.filter_by(
+        ticket_id=ticket.id,
+        customer_id=current_user.id
+    ).first()
+
+    if not existing_rating and chat_session:
+        existing_rating = CustomerSatisfaction.query.filter_by(
+            session_id=chat_session.id,
+            customer_id=current_user.id
+        ).first()
+
+    rating_data = None
+
+    if existing_rating:
+        rating_data = {
+            "id": existing_rating.id,
+            "rating": existing_rating.rating,
+            "feedback": existing_rating.feedback or "",
+            "created_at": (
+                existing_rating.created_at.strftime(
+                    "%d %b %Y %H:%M"
+                )
+                if existing_rating.created_at
+                else ""
+            ),
+            "updated_at": (
+                existing_rating.updated_at.strftime(
+                    "%d %b %Y %H:%M"
+                )
+                if existing_rating.updated_at
+                else ""
+                
+            )
+        }
+
+    return jsonify({
+        "ok": True,
+        "ticket": serialize_ticket(ticket),
+        "chat_session": (
+            serialize_chat_session(chat_session)
+            if chat_session
+            else None
+        ),
+        "already_rated":
+            existing_rating is not None,
+
+        "ticket_rating":
+            rating_data,
+        "comments": [
+            serialize_comment(comment)
+            for comment in comments
+        ]
+    }), 200
+
+
+@csrf.exempt
+@customer_blueprint.route(
+    "/api/escalate",
+    methods=["POST"]
+)
+@login_required(role="Customer")
+def api_escalate():
+    """
+    Create a support ticket from an IT triage chat session.
+
+    This route:
+
+    1. Validates the triage summary.
+    2. Validates the optional ChatSession.
+    3. Prevents duplicate ticket creation for one session.
+    4. Determines the ticket category and priority.
+    5. Creates the Ticket.
+    6. Creates the initial triage Comment.
+    7. Links the ChatSession to the Ticket.
+    8. Links all ChatMessage rows to the Ticket.
+    9. Updates the persistent chat stage to ticket_created.
+    10. Sends ticket-created and ticket-escalated emails.
+    11. Notifies agents and administrators.
+    12. Emits ticket, sidebar, analytics and customer refresh events.
+    """
+
+    auto_close_waiting_customer_tickets()
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    # ========================================================
+    # REQUEST VALUES
+    # ========================================================
+
+    summary = (
+        data.get("message")
+        or ""
+    ).strip()
+
+    subject = (
+        data.get("subject")
+        or "IT Support Request"
+    ).strip()
+
+    raw_session_id = data.get(
+        "session_id"
+    )
+
+    frontend_category = (
+        data.get("category")
+        or ""
+    ).strip()
+
+    frontend_priority = (
+        data.get("priority")
+        or ""
+    ).strip()
+
+    # ========================================================
+    # VALIDATE TRIAGE SUMMARY
+    # ========================================================
+
+    if not summary:
+        return jsonify({
+            "ok": False,
+            "reason": "missing_summary",
+            "reply": (
+                "Please complete the IT triage questions "
+                "before creating a support request."
+            )
+        }), 400
+
+    if len(summary) > 50000:
+        return jsonify({
+            "ok": False,
+            "reason": "summary_too_large",
+            "reply": (
+                "The triage summary is too large. "
+                "Please shorten the support request."
+            )
+        }), 400
+
+    if not subject:
+        subject = "IT Support Request"
+
+    if len(subject) > 255:
+        subject = subject[:255]
+
+    # ========================================================
+    # VALIDATE OPTIONAL CHAT SESSION
+    # ========================================================
+
+    chat_session = None
+    session_id = None
+
+    if raw_session_id not in (
+        None,
+        "",
+        0,
+        "0"
+    ):
+        try:
+            session_id = int(
+                raw_session_id
+            )
+
+        except (TypeError, ValueError):
+            return jsonify({
+                "ok": False,
+                "reason": "invalid_session_id",
+                "reply": (
+                    "The selected chat session is invalid."
+                )
+            }), 400
+
+        if session_id <= 0:
+            return jsonify({
+                "ok": False,
+                "reason": "invalid_session_id",
+                "reply": (
+                    "The selected chat session is invalid."
+                )
+            }), 400
+
+        chat_session = ChatSession.query.filter_by(
+            id=session_id,
+            user_id=current_user.id
+        ).first()
+
+        if not chat_session:
+            return jsonify({
+                "ok": False,
+                "reason": "session_not_found",
+                "reply": (
+                    "The selected chat session could not "
+                    "be found."
+                )
+            }), 404
+
+        # ----------------------------------------------------
+        # PREVENT DUPLICATE ESCALATION
+        # ----------------------------------------------------
+
+        if chat_session.ticket_id:
+            existing_ticket = Ticket.query.filter_by(
+                id=chat_session.ticket_id,
+                author_id=current_user.id
+            ).first()
+
+            if existing_ticket:
+                return jsonify({
+                    "ok": False,
+                    "reason": "session_already_escalated",
+                    "reply": (
+                        f"This chat already has support ticket "
+                        f"#{existing_ticket.number}."
+                    ),
+                    "session_id": chat_session.id,
+                    **serialize_ticket(existing_ticket)
+                }), 409
+
+            # The session refers to a ticket that no longer exists.
+            # Remove the stale reference before creating a new ticket.
+            chat_session.ticket_id = None
+
+    # ========================================================
+    # AUTOMATIC CLASSIFICATION
+    # ========================================================
+
+    auto_category, auto_priority = classify_it_issue(
+        f"{subject}\n{summary}"
+    )
+
+    category_name = (
+        frontend_category
+        or auto_category
+        or "Help and support"
+    ).strip()
+
+    priority_name = (
+        frontend_priority
+        or auto_priority
+        or "Medium"
+    ).strip()
+
+    # ========================================================
+    # FIND CATEGORY
+    # ========================================================
+
+    category = Category.query.filter(
+        Category.category.ilike(
+            category_name
+        )
+    ).first()
+
+    # Handle names produced by the JavaScript and classifier
+    # that may not exactly match database values.
+    if not category:
+        category_aliases = {
+            "account": [
+                "Account",
+                "Account Access",
+                "Login / Account Access",
+                "Help and support"
+            ],
+            "account access": [
+                "Account Access",
+                "Account",
+                "Help and support"
+            ],
+            "password reset": [
+                "Password Reset",
+                "Account Access",
+                "Account",
+                "Help and support"
+            ],
+            "email": [
+                "Email",
+                "Software",
+                "Help and support"
+            ],
+            "network": [
+                "Network",
+                "Help and support"
+            ],
+            "software": [
+                "Software",
+                "Help and support"
+            ],
+            "hardware": [
+                "Hardware",
+                "Help and support"
+            ],
+            "security": [
+                "Security",
+                "Help and support"
+            ],
+            "general": [
+                "General",
+                "Help and support"
+            ],
+            "help and support": [
+                "Help and support",
+                "General"
+            ]
+        }
+
+        possible_names = category_aliases.get(
+            category_name.lower(),
+            [
+                category_name,
+                "Help and support",
+                "General"
+            ]
+        )
+
+        for possible_name in possible_names:
+            category = Category.query.filter(
+                Category.category.ilike(
+                    possible_name
+                )
+            ).first()
+
+            if category:
+                break
+
+    if not category:
+        category = Category.query.order_by(
+            Category.id.asc()
+        ).first()
+
+    # ========================================================
+    # FIND PRIORITY
+    # ========================================================
+
+    priority = Priority.query.filter(
+        Priority.priority.ilike(
+            priority_name
+        )
+    ).first()
+
+    if not priority:
+        priority_aliases = {
+            "critical": "Urgent",
+            "urgent": "Urgent",
+            "high": "High",
+            "medium": "Medium",
+            "normal": "Medium",
+            "low": "Low"
+        }
+
+        fallback_priority_name = priority_aliases.get(
+            priority_name.lower(),
+            "Medium"
+        )
+
+        priority = Priority.query.filter(
+            Priority.priority.ilike(
+                fallback_priority_name
+            )
+        ).first()
+
+    if not priority:
+        priority = Priority.query.filter(
+            Priority.priority.ilike(
+                "Medium"
+            )
+        ).first()
+
+    if not priority:
+        priority = Priority.query.order_by(
+            Priority.id.asc()
+        ).first()
+
+    # ========================================================
+    # FIND OPEN STATUS
+    # ========================================================
+
+    open_status = Status.query.filter(
+        Status.status.ilike(
+            "Open"
+        )
+    ).first()
+
+    if not open_status:
+        open_status_id = get_open_status_id()
+
+        if open_status_id:
+            open_status = db.session.get(
+                Status,
+                open_status_id
+            )
+
+    # ========================================================
+    # VALIDATE DATABASE CONFIGURATION
+    # ========================================================
+
+    if not category:
+        return jsonify({
+            "ok": False,
+            "reason": "missing_category_configuration",
+            "reply": (
+                "No ticket categories are configured. "
+                "Please contact the administrator."
+            )
+        }), 500
+
+    if not priority:
+        return jsonify({
+            "ok": False,
+            "reason": "missing_priority_configuration",
+            "reply": (
+                "No ticket priorities are configured. "
+                "Please contact the administrator."
+            )
+        }), 500
+
+    if not open_status:
+        return jsonify({
+            "ok": False,
+            "reason": "missing_status_configuration",
+            "reply": (
+                "The Open ticket status is not configured. "
+                "Please contact the administrator."
+            )
+        }), 500
+
+    # ========================================================
+    # CREATE DATABASE RECORDS
+    # ========================================================
+
+    ticket = None
+    first_comment = None
+    ticket_created_chat_message = None
+
+    try:
+        # ----------------------------------------------------
+        # CREATE UNIQUE TICKET NUMBER
+        # ----------------------------------------------------
+
+        ticket_number = random_numbers()
+
+        while Ticket.query.filter_by(
+            number=ticket_number
+        ).first():
+            ticket_number = random_numbers()
+
+        # ----------------------------------------------------
+        # CREATE TICKET
+        # ----------------------------------------------------
+
+        ticket = Ticket(
+            number=ticket_number,
+            subject=subject,
+            body=summary,
+            author_id=current_user.id,
+            owner_id=None,
+            category_id=category.id,
+            priority_id=priority.id,
+            status_id=open_status.id,
+            orig_file=None,
+            file_link=None
+        )
+
+        db.session.add(
+            ticket
+        )
+
+        # Generate ticket.id without committing yet.
+        db.session.flush()
+
+        # ----------------------------------------------------
+        # CREATE FIRST TICKET COMMENT
+        # ----------------------------------------------------
+
+        first_comment = Comment(
+            comment=summary,
+            author_id=current_user.id,
+            ticket_id=ticket.id
+        )
+
+        db.session.add(
+            first_comment
+        )
+
+        # Generate first_comment.id before the final commit.
+        db.session.flush()
+
+        # ----------------------------------------------------
+        # LINK CHAT SESSION TO TICKET
+        # ----------------------------------------------------
+
+        if chat_session:
+            chat_session.ticket_id = ticket.id
+            chat_session.title = subject
+            chat_session.issue_type = (
+                chat_session.issue_type
+                or subject
+            )
+            chat_session.status = "Ticket Created"
+            chat_session.current_stage = "ticket_created"
+            chat_session.triage_summary = summary
+            chat_session.updated_at = (
+                datetime.datetime.utcnow()
+            )
+
+            # Keep every saved chat message visible and link it
+            # to the newly created support ticket.
+            ChatMessage.query.filter(
+                ChatMessage.session_id == chat_session.id,
+                ChatMessage.user_id == current_user.id
+            ).update({
+                "ticket_id": ticket.id,
+                "escalated": True,
+                "customer_visible": True
+            }, synchronize_session=False)
+
+            # ------------------------------------------------
+            # SAVE TICKET-CREATED MESSAGE IN CHAT HISTORY
+            # ------------------------------------------------
+
+            ticket_created_chat_message = ChatMessage(
+                user_id=current_user.id,
+                session_id=chat_session.id,
+                ticket_id=ticket.id,
+                role="system",
+                message=(
+                    f"Support ticket #{ticket.number} was created "
+                    f"and sent to the IT support team."
+                ),
+                faq_matched=False,
+                ai_used=False,
+                escalated=True,
+                guest_user=False,
+                customer_visible=True,
+                resolution_status="Escalated"
+            )
+
+            db.session.add(
+                ticket_created_chat_message
+            )
+
+        # ----------------------------------------------------
+        # COMMIT EVERYTHING AS ONE TRANSACTION
+        # ----------------------------------------------------
+
+        db.session.commit()
+
+        db.session.refresh(
+            ticket
+        )
+
+        db.session.refresh(
+            first_comment
+        )
+
+        if chat_session:
+            db.session.refresh(
+                chat_session
+            )
+
+        if ticket_created_chat_message:
+            db.session.refresh(
+                ticket_created_chat_message
+            )
+
+    except Exception as error:
+        db.session.rollback()
+
+        current_app.logger.exception(
+            "Could not create escalated IT support ticket "
+            "for customer_id=%s session_id=%s: %s",
+            current_user.id,
+            session_id,
+            error
+        )
+
+        return jsonify({
+            "ok": False,
+            "reason": "ticket_creation_failed",
+            "reply": (
+                "The support ticket could not be created. "
+                "Please try again."
+            )
+        }), 500
+
+    # ========================================================
+    # SEND CUSTOMER EMAILS
+    # ========================================================
+
+    created_email_sent = False
+    escalated_email_sent = False
+
+    try:
+        created_email_sent = bool(
+            send_ticket_created_email(
+                current_user,
+                ticket
+            )
+        )
+
+    except Exception as error:
+        current_app.logger.exception(
+            "Ticket-created email raised an error "
+            "for ticket_id=%s customer_id=%s: %s",
+            ticket.id,
+            current_user.id,
+            error
+        )
+
+    try:
+        escalated_email_sent = bool(
+            send_ticket_escalated_email(
+                current_user,
+                ticket
+            )
+        )
+
+    except Exception as error:
+        current_app.logger.exception(
+            "Ticket-escalated email raised an error "
+            "for ticket_id=%s customer_id=%s: %s",
+            ticket.id,
+            current_user.id,
+            error
+        )
+
+    # ========================================================
+    # SYSTEM EVENT LOG
+    # ========================================================
+
+    log_system_event(
+        event_type="Ticket Escalated",
+        severity="Info",
+        message=(
+            f"Ticket #{ticket.number} was created from an "
+            f"IT triage chat by customer {current_user.email}. "
+            f"Chat session ID: "
+            f"{chat_session.id if chat_session else 'None'}. "
+            f"Category: "
+            f"{ticket.category.category if ticket.category else category_name}. "
+            f"Priority: "
+            f"{ticket.priority.priority if ticket.priority else priority_name}. "
+            f"Ticket-created email result: "
+            f"{created_email_sent}. "
+            f"Ticket-escalated email result: "
+            f"{escalated_email_sent}."
+        ),
+        user_id=current_user.id,
+        ticket_id=ticket.id
+    )
+
+    # ========================================================
+    # NOTIFY AGENTS AND ADMINISTRATORS
+    # ========================================================
+
+    try:
+        notify_staff(
+            message=(
+                f"created a new IT support request "
+                f"#{ticket.number}"
+            ),
+            sender_id=current_user.id,
+            ticket_id=ticket.id,
+            include_agents=True,
+            include_admins=True
+        )
+
+    except Exception as error:
+        current_app.logger.exception(
+            "Staff notification failed for "
+            "ticket_id=%s: %s",
+            ticket.id,
+            error
+        )
+
+    # ========================================================
+    # BUILD REAL-TIME PAYLOAD
+    # ========================================================
+
+    payload = {
+        **serialize_ticket(ticket),
+        "user_id": current_user.id,
+        "session_id": (
+            chat_session.id
+            if chat_session
+            else None
+        ),
+        "current_stage": (
+            chat_session.current_stage
+            if chat_session
+            else "ticket_created"
+        ),
+        "reply": (
+            f"Ticket #{ticket.number} was created. "
+            f"Your IT triage summary has been sent to "
+            f"the support team."
+        ),
+        "created_email_sent": created_email_sent,
+        "escalated_email_sent": escalated_email_sent
+    }
+
+    # ========================================================
+    # SOCKET.IO EVENTS
+    # ========================================================
+
+    try:
+        emit_ticket_comment(
+            ticket,
+            first_comment,
+            is_attachment=False
+        )
+
+        socketio.emit(
+            "support_ticket_started",
+            payload,
+            room=f"user_{current_user.id}"
+        )
+
+        socketio.emit(
+            "chat_session_updated",
+            payload,
+            room=f"user_{current_user.id}"
+        )
+
+        emit_global_event(
+            "ticket_created",
+            ticket,
+            "Customer created a new IT support request."
+        )
+
+        emit_customer_refresh(
+            current_user.id,
+            "support_ticket_started"
+        )
+
+    except Exception as error:
+        current_app.logger.exception(
+            "Socket event emission failed for "
+            "ticket_id=%s session_id=%s: %s",
+            ticket.id,
+            chat_session.id if chat_session else None,
+            error
+        )
+
+    # ========================================================
+    # RESPONSE
+    # ========================================================
+
+    return jsonify({
+        "ok": True,
+        "reply": payload["reply"],
+        "session_id": payload["session_id"],
+        "current_stage": payload["current_stage"],
+        "created_email_sent": created_email_sent,
+        "escalated_email_sent": escalated_email_sent,
+        "email_message": (
+            "Ticket confirmation and escalation emails "
+            "were processed successfully."
+            if (
+                created_email_sent
+                and escalated_email_sent
+            )
+            else (
+                "The support ticket was created, but one "
+                "or more email notifications could not "
+                "be sent or were disabled by email "
+                "preference settings."
+            )
+        ),
+        **serialize_ticket(ticket)
+    }), 200
+
+@csrf.exempt
+@customer_blueprint.route("/api/support-requests", methods=["GET"])
+@login_required(role="Customer")
+def api_support_requests():
+
+    tickets = (
+        Ticket.query
+        .filter(Ticket.author_id == current_user.id)
+        .order_by(Ticket.updated_at.desc(), Ticket.created_at.desc())
+        .all()
+    )
+
+    return jsonify({
+        "ok": True,
+        "tickets": [
+            {
+                "id": ticket.id,
+                "ticket_number": ticket.number,
+                "subject": ticket.subject,
+                "status": ticket.status.status if ticket.status else "",
+                "priority": ticket.priority.priority if ticket.priority else "",
+                "category": ticket.category.category if ticket.category else "",
+                "updated_at": ticket.updated_at.strftime("%d %b %Y %H:%M") if ticket.updated_at else "",
+                "created_at": ticket.created_at.strftime("%d %b %Y %H:%M") if ticket.created_at else ""
+            }
+            for ticket in tickets
+        ]
+    }), 200
+
+
+@csrf.exempt
+@customer_blueprint.route("/api/support-request/<int:ticket_id>", methods=["GET"])
+@login_required(role="Customer")
+def api_support_request(ticket_id):
+
+    ticket = Ticket.query.filter_by(
+        id=ticket_id,
+        author_id=current_user.id
+    ).first()
+
+    if not ticket:
+        return jsonify({
+            "ok": False,
+            "reason": "not_found"
+        }), 404
 
     comments = (
         Comment.query
@@ -1550,177 +4821,19 @@ def api_ticket_comments(ticket_id):
 
     return jsonify({
         "ok": True,
-        "ticket": serialize_ticket(ticket),
-        "comments": [serialize_comment(c) for c in comments]
+        "ticket": {
+            "id": ticket.id,
+            "ticket_number": ticket.number,
+            "subject": ticket.subject,
+            "status": ticket.status.status if ticket.status else "",
+            "priority": ticket.priority.priority if ticket.priority else "",
+            "category": ticket.category.category if ticket.category else ""
+        },
+        "comments": [
+            serialize_comment(comment)
+            for comment in comments
+        ]
     }), 200
-
-
-@csrf.exempt
-@customer_blueprint.route("/api/escalate", methods=["POST"])
-def api_escalate():
-    auto_close_waiting_customer_tickets()
-    if not current_user.is_authenticated:
-        return jsonify({
-            "ok": False,
-            "needs_login": True,
-            "reply": "Please login or sign up to talk to a support agent."
-        }), 200
-
-    data = request.get_json(silent=True) or {}
-
-    last_message = (
-        data.get("message") or ""
-    ).strip() or "Customer requested live support."
-
-    existing_ticket = get_active_ticket_for_user(current_user.id)
-
-    if existing_ticket:
-        emit_customer_chat_event(
-            current_user.id,
-            "support_ticket_started",
-            {
-                **serialize_ticket(existing_ticket),
-                "reply": (
-                    f"You already have an active support ticket "
-                    f"#{existing_ticket.number}. Reconnecting you now..."
-                )
-            }
-        )
-
-        return jsonify({
-            "ok": True,
-            "already_exists": True,
-            "reply": (
-                f"You already have an active support ticket "
-                f"#{existing_ticket.number}. Reconnecting you now..."
-            ),
-            **serialize_ticket(existing_ticket)
-        }), 200
-
-    ticket = Ticket(
-        number=random_numbers(),
-        subject="Live Support Request",
-        body=last_message,
-        author_id=current_user.id,
-        owner_id=None,
-        category_id=1,
-        priority_id=2,
-        status_id=get_open_status_id(),
-        orig_file=None,
-        file_link=None
-    )
-
-    db.session.add(ticket)
-    db.session.commit()
-
-    previous_ai_messages = (
-        ChatMessage.query
-        .filter(ChatMessage.user_id == current_user.id)
-        .filter(ChatMessage.customer_visible == True)
-        .filter(ChatMessage.resolution_status == "Not Solved")
-        .order_by(ChatMessage.created_at.asc())
-        .all()
-    )
-
-    context_lines = []
-
-    for msg in previous_ai_messages:
-        role_name = "Customer" if msg.role == "user" else "AI Assistant"
-        context_lines.append(
-            f"<strong>{role_name}:</strong> {msg.message}"
-        )
-
-    first_comment_text = last_message
-
-    if context_lines:
-        first_comment_text = (
-            "<strong>Current AI / FAQ Conversation</strong><br><br>" +
-            "<br>".join(context_lines) +
-            "<br><br><strong>Support request:</strong> " +
-            last_message
-        )
-
-    first_comment = Comment(
-        comment=first_comment_text,
-        author_id=current_user.id,
-        ticket_id=ticket.id
-    )
-
-    db.session.add(first_comment)
-    db.session.commit()
-    
-    ChatMessage.query.filter(
-        ChatMessage.user_id == current_user.id,
-        ChatMessage.customer_visible == True
-    ).update({
-        "customer_visible": False
-    })
-
-    db.session.commit()
-
-    notify_staff(
-        message="created a new support ticket",
-        sender_id=current_user.id,
-        ticket_id=ticket.id
-    )
-
-    emit_ticket_comment(ticket, first_comment, is_attachment=True)
-
-    payload = {
-        **serialize_ticket(ticket),
-        "user_id": current_user.id,
-        "reply": (
-            f"Ticket #{ticket.number} created. "
-            f"Waiting for a support agent to join..."
-        )
-    }
-
-    socketio.emit(
-        "support_ticket_started",
-        payload,
-        room=f"user_{current_user.id}"
-    )
-
-    socketio.emit(
-        "global_ticket_updated",
-        {
-            **serialize_ticket(ticket),
-            "message": "Customer started a support ticket."
-        }
-    )
-
-    socketio.emit(
-        "sidebar_counts_updated",
-        {
-            **serialize_ticket(ticket),
-            "message": "Customer started a support ticket."
-        }
-    )
-
-    socketio.emit(
-        "notification_updated",
-        {
-            **serialize_ticket(ticket),
-            "message": "Customer started a support ticket."
-        }
-    )
-
-    socketio.emit(
-        "analytics_updated",
-        {
-            **serialize_ticket(ticket),
-            "message": "Customer started a support ticket."
-        }
-    )
-
-    emit_customer_refresh(current_user.id, "support_ticket_started")
-
-    return jsonify({
-        "ok": True,
-        "reply": payload["reply"],
-        **serialize_ticket(ticket)
-    }), 200
-
 
 @csrf.exempt
 @customer_blueprint.route("/api/ticket/comment/<int:ticket_id>", methods=["POST"])
@@ -1902,10 +5015,24 @@ def mark_navbar_notifications_read():
     return jsonify({"ok": True}), 200
 
 @csrf.exempt
-@customer_blueprint.route("/api/ticket/reopen/<int:ticket_id>", methods=["POST"])
+@customer_blueprint.route(
+    "/api/ticket/reopen/<int:ticket_id>",
+    methods=["POST"]
+)
+@login_required(role="Customer")
 def api_ticket_reopen(ticket_id):
-    if not current_user.is_authenticated:
-        return jsonify({"ok": False, "reason": "not_authenticated"}), 401
+    """
+    Reopen a closed customer ticket.
+
+    The customer can reopen a ticket only when:
+
+        - the ticket belongs to the logged-in customer;
+        - its current status is Closed; and
+        - it was closed no more than 30 days ago.
+
+    A successful reopening sends the ticket-reopened email and
+    records the attempt through EmailLog.
+    """
 
     ticket = Ticket.query.filter_by(
         id=ticket_id,
@@ -1913,15 +5040,29 @@ def api_ticket_reopen(ticket_id):
     ).first()
 
     if not ticket:
-        return jsonify({"ok": False, "reason": "not_found"}), 404
+        return jsonify({
+            "ok": False,
+            "reason": "not_found",
+            "message": "Ticket not found."
+        }), 404
 
     if ticket.status_id != get_closed_status_id():
-        return jsonify({"ok": False, "reason": "not_closed"}), 400
+        return jsonify({
+            "ok": False,
+            "reason": "not_closed",
+            "message": "Only closed tickets can be reopened."
+        }), 400
 
-    closed_date = ticket.updated_at or ticket.created_at
+    closed_date = (
+        ticket.updated_at
+        or ticket.created_at
+    )
 
     if closed_date:
-        closed_date = closed_date.replace(tzinfo=None)
+        if closed_date.tzinfo is not None:
+            closed_date = closed_date.replace(
+                tzinfo=None
+            )
 
         days_since_closed = (
             datetime.datetime.utcnow() - closed_date
@@ -1931,21 +5072,72 @@ def api_ticket_reopen(ticket_id):
             return jsonify({
                 "ok": False,
                 "reason": "reopen_period_expired",
-                "message": "This ticket has been closed for more than 30 days. Please create a new support request."
+                "message": (
+                    "This ticket has been closed for more "
+                    "than 30 days. Please create a new "
+                    "support request."
+                )
             }), 400
 
-    ticket.status_id = get_pending_status_id()
+    # --------------------------------------------------------
+    # REOPEN TICKET
+    # --------------------------------------------------------
 
-    message = f"Ticket reopened by customer {current_user.name}."
+    ticket.status_id = get_pending_status_id()
+    ticket.waiting_customer_since = None
+    ticket.inactive_reminder_sent = False
+
+    reopen_message = (
+        f"Ticket reopened by customer {current_user.name}."
+    )
 
     comment = Comment(
-        comment=message,
+        comment=reopen_message,
         author_id=current_user.id,
         ticket_id=ticket.id
     )
 
     db.session.add(comment)
     db.session.commit()
+
+    db.session.refresh(ticket)
+
+    # --------------------------------------------------------
+    # SEND TICKET-REOPENED EMAIL
+    # --------------------------------------------------------
+
+    email_sent = send_ticket_reopened_email(
+        current_user,
+        ticket
+    )
+
+    if not email_sent:
+        current_app.logger.error(
+            "Customer ticket-reopened email failed "
+            "for ticket_id=%s customer_id=%s",
+            ticket.id,
+            current_user.id
+        )
+
+    # --------------------------------------------------------
+    # SYSTEM EVENT
+    # --------------------------------------------------------
+
+    log_system_event(
+        event_type="Ticket Reopened",
+        severity="Info",
+        message=(
+            f"Ticket #{ticket.number} was reopened "
+            f"by customer {current_user.email}. "
+            f"Email result: {email_sent}."
+        ),
+        user_id=current_user.id,
+        ticket_id=ticket.id
+    )
+
+    # --------------------------------------------------------
+    # NOTIFICATIONS
+    # --------------------------------------------------------
 
     if ticket.owner_id:
         notify_user(
@@ -1963,80 +5155,159 @@ def api_ticket_reopen(ticket_id):
         include_admins=True
     )
 
-    emit_ticket_comment(ticket, comment, is_attachment=False)
-    emit_ticket_system(ticket, "ticket_reopened", message)
-    emit_customer_refresh(current_user.id, "ticket_reopened")
+    # --------------------------------------------------------
+    # REAL-TIME EVENTS
+    # --------------------------------------------------------
+
+    emit_ticket_comment(
+        ticket,
+        comment,
+        is_attachment=False
+    )
+
+    emit_ticket_system(
+        ticket,
+        "ticket_reopened",
+        reopen_message
+    )
+
+    emit_customer_refresh(
+        current_user.id,
+        "ticket_reopened"
+    )
 
     return jsonify({
         "ok": True,
-        "message": message,
+        "message": reopen_message,
+        "email_sent": email_sent,
+        "email_message": (
+            "A ticket-reopened confirmation email was sent."
+            if email_sent
+            else (
+                "The ticket was reopened, but the confirmation "
+                "email could not be sent."
+            )
+        ),
         **serialize_ticket(ticket)
     }), 200
 
 @csrf.exempt
-@customer_blueprint.route("/api/ticket/confirm-solved/<int:ticket_id>", methods=["POST"])
+@customer_blueprint.route(
+    "/api/ticket/confirm-solved/<int:ticket_id>",
+    methods=["POST"]
+)
+@login_required(role="Customer")
 def api_ticket_confirm_solved(ticket_id):
-    if not current_user.is_authenticated:
-        return jsonify({"ok": False, "reason": "not_authenticated"}), 401
-
-    ticket = Ticket.query.filter_by(
-        id=ticket_id,
-        author_id=current_user.id
-    ).first()
+    ticket = (
+        Ticket.query
+        .filter_by(
+            id=ticket_id,
+            author_id=current_user.id
+        )
+        .first()
+    )
 
     if not ticket:
-        return jsonify({"ok": False, "reason": "not_found"}), 404
+        return jsonify({
+            "ok": False,
+            "reason": "not_found",
+            "message": "Ticket not found."
+        }), 404
 
-    if ticket.status_id != get_closed_status_id():
-        return jsonify({"ok": False, "reason": "not_closed"}), 400
+    if (
+        ticket.status_id
+        != get_closed_status_id()
+    ):
+        return jsonify({
+            "ok": False,
+            "reason": "not_closed",
+            "message": (
+                "Only a closed ticket can be "
+                "confirmed as solved."
+            )
+        }), 400
 
-    ChatMessage.query.filter(
-        ChatMessage.user_id == current_user.id
-    ).update({
-        "customer_visible": False
-    })
-
-    db.session.commit()
-
-    clear_payload = {
-        "user_id": current_user.id,
-        "ticket_id": ticket.id,
-        "ticket_number": ticket.number,
-        "message": "✅ Thank you. Your issue has been marked as solved. You can start a new chat anytime."
-    }
-
-    socketio.emit(
-        "customer_chat_cleared",
-        clear_payload,
-        room=f"user_{current_user.id}"
+    chat_session = (
+        ChatSession.query
+        .filter_by(
+            ticket_id=ticket.id,
+            user_id=current_user.id
+        )
+        .order_by(
+            ChatSession.updated_at.desc()
+        )
+        .first()
     )
 
-    socketio.emit(
-        "ticket_confirmed_solved",
-        clear_payload,
-        room=f"ticket_{ticket.id}"
+    if chat_session:
+        # The customer has pressed Yes, but the process
+        # is not complete until feedback is submitted.
+        chat_session.status = "Awaiting Feedback"
+        chat_session.current_stage = "awaiting_feedback"
+        chat_session.updated_at = (
+            datetime.datetime.utcnow()
+        )
+
+    confirmation_message = (
+        "Customer confirmed that the issue was solved. "
+        "Waiting for customer feedback."
     )
 
-    socketio.emit(
-        "global_ticket_updated",
-        clear_payload
+    existing_confirmation = (
+        Comment.query
+        .filter(
+            Comment.ticket_id == ticket.id,
+            Comment.comment
+            == confirmation_message
+        )
+        .first()
     )
 
-    socketio.emit(
-        "sidebar_counts_updated",
-        clear_payload
-    )
+    if not existing_confirmation:
+        confirmation_comment = Comment(
+            comment=confirmation_message,
+            author_id=current_user.id,
+            ticket_id=ticket.id
+        )
 
-    socketio.emit(
-        "analytics_updated",
-        clear_payload
-    )
+        db.session.add(
+            confirmation_comment
+        )
 
-    emit_customer_refresh(current_user.id, "ticket_confirmed_solved")
+    try:
+        db.session.commit()
+
+    except Exception:
+        db.session.rollback()
+
+        current_app.logger.exception(
+            "Could not confirm solved ticket_id=%s",
+            ticket.id
+        )
+
+        return jsonify({
+            "ok": False,
+            "reason": "database_error",
+            "message": (
+                "The ticket could not be confirmed. "
+                "Please try again."
+            )
+        }), 500
+
+    # Do not hide ChatMessage records.
+    # Do not clear the customer chat.
+    # Do not emit ticket_confirmed_solved yet.
+    # The customer must first submit a rating.
 
     return jsonify({
         "ok": True,
-        "message": clear_payload["message"]
+        "ticket_id": ticket.id,
+        "ticket_number": ticket.number,
+        "awaiting_feedback": True,
+        "message": (
+            "Thank you. Please rate your "
+            "support experience."
+        )
     }), 200
 
 
@@ -2050,25 +5321,55 @@ def api_talk_to_support():
 # LEGACY FORM ROUTES STILL SUPPORTED
 # ============================================================
 
-@customer_blueprint.route("/ticket/reopen/<int:id>", methods=["POST"])
+@customer_blueprint.route(
+    "/ticket/reopen/<int:id>",
+    methods=["POST"]
+)
 @login_required(role="Customer")
 def reopen_ticket(id):
     response = api_ticket_reopen(id)
 
     if isinstance(response, tuple):
-        data = response[0].get_json()
+        response_object = response[0]
+        status_code = response[1]
     else:
-        data = response.get_json()
+        response_object = response
+        status_code = response.status_code
+
+    data = response_object.get_json() or {}
 
     if data.get("ok"):
-        flash("Ticket reopened successfully.", "primary")
+        if data.get("email_sent"):
+            flash(
+                "Ticket reopened successfully. "
+                "A confirmation email was sent.",
+                "success"
+            )
+        else:
+            flash(
+                "Ticket reopened successfully, but the "
+                "confirmation email could not be sent.",
+                "warning"
+            )
+
     else:
         flash(
-            data.get("message") or "Ticket could not be reopened.",
+            data.get("message")
+            or "Ticket could not be reopened.",
             "warning"
         )
 
-    return redirect(url_for("customer.chat_page"))
+    if status_code >= 400:
+        return redirect(
+            url_for(
+                "customer.view_ticket",
+                id=id
+            )
+        )
+
+    return redirect(
+        url_for("customer.chat")
+    )
 
 @customer_blueprint.route("/ticket/confirm-solved/<int:id>", methods=["POST"])
 @login_required(role="Customer")
@@ -2163,52 +5464,161 @@ def view_knowledge_article(id):
         "customer/view_knowledge_article.html",
         article=article
     )
-# ============================================================
-# SOCKET ROOMS
-# ============================================================
-@socketio.on("join_ticket_room")
-def join_ticket_room(data):
+
+
+def get_or_create_email_preference(user_id):
+    """
+    Return the email preference record belonging to one customer.
+
+    A default preference row is created for existing customers who
+    registered before email preferences were introduced.
+    """
+
+    preference = EmailPreference.query.filter_by(
+        user_id=user_id
+    ).first()
+
+    if preference:
+        return preference
+
     try:
-        if not current_user.is_authenticated:
-            return
+        preference = EmailPreference(
+            user_id=user_id,
+            ticket_updates=True,
+            security_emails=True,
+            marketing_emails=False,
+            satisfaction_emails=True,
+            created_at=datetime.datetime.utcnow(),
+            updated_at=datetime.datetime.utcnow()
+        )
 
-        ticket_id = data.get("ticket_id")
+        db.session.add(preference)
+        db.session.commit()
 
-        if not ticket_id:
-            return
+        return preference
 
-        ticket = Ticket.query.filter_by(
-            id=int(ticket_id),
-            author_id=current_user.id
+    except Exception as error:
+        db.session.rollback()
+
+        current_app.logger.exception(
+            "EMAIL PREFERENCE CREATE ERROR: "
+            "user_id=%s error=%s",
+            user_id,
+            error
+        )
+
+        # Another request may have created the row at the same time.
+        preference = EmailPreference.query.filter_by(
+            user_id=user_id
         ).first()
 
-        if not ticket:
-            return
+        if preference:
+            return preference
 
-        room = f"ticket_{ticket.id}"
-        join_room(room)
-
-        print(f"✅ Customer joined ticket room: {room}")
-
-    except Exception as e:
-        print("SOCKET ROOM ERROR:", e)
+        raise
 
 
-@socketio.on("join_notification_room")
-def join_notification_room(data):
+@customer_blueprint.route(
+    "/email-preferences",
+    methods=["GET", "POST"]
+)
+@login_required(role="Customer")
+def email_preferences():
+    """
+    Display and update optional customer email preferences.
+
+    Mandatory authentication and security messages remain enabled:
+        - email verification
+        - login OTP
+        - password reset
+        - password changed confirmation
+    """
+
     try:
-        if not current_user.is_authenticated:
-            return
+        preference = get_or_create_email_preference(
+            current_user.id
+        )
 
-        user_id = str(data.get("user_id"))
+    except Exception:
+        flash(
+            "Your email preference settings could not be loaded.",
+            "danger"
+        )
 
-        if user_id != str(current_user.id):
-            return
+        return redirect(
+            url_for("customer.dashboard")
+        )
 
-        room = f"user_{current_user.id}"
-        join_room(room)
+    if request.method == "POST":
+        try:
+            # A checkbox is present in request.form only when checked.
+            preference.ticket_updates = (
+                request.form.get("ticket_updates") == "on"
+            )
 
-        print(f"✅ Customer joined user room: {room}")
+            preference.satisfaction_emails = (
+                request.form.get("satisfaction_emails") == "on"
+            )
 
-    except Exception as e:
-        print("USER ROOM ERROR:", e)
+            preference.marketing_emails = (
+                request.form.get("marketing_emails") == "on"
+            )
+
+            # Security emails are mandatory.
+            preference.security_emails = True
+
+            preference.updated_at = (
+                datetime.datetime.utcnow()
+            )
+
+            db.session.commit()
+
+            log_system_event(
+                event_type="Email Preferences Updated",
+                severity="Info",
+                message=(
+                    f"Email preferences updated by "
+                    f"{current_user.email}. "
+                    f"Ticket updates: "
+                    f"{preference.ticket_updates}. "
+                    f"Security emails: "
+                    f"{preference.security_emails}. "
+                    f"Satisfaction emails: "
+                    f"{preference.satisfaction_emails}. "
+                    f"Marketing emails: "
+                    f"{preference.marketing_emails}."
+                ),
+                user_id=current_user.id
+            )
+
+            flash(
+                "Your email preferences have been saved.",
+                "success"
+            )
+
+            return redirect(
+                url_for(
+                    "customer.email_preferences"
+                )
+            )
+
+        except Exception as error:
+            db.session.rollback()
+
+            current_app.logger.exception(
+                "EMAIL PREFERENCE UPDATE ERROR: "
+                "user_id=%s error=%s",
+                current_user.id,
+                error
+            )
+
+            flash(
+                "Your email preferences could not be saved. "
+                "Please try again.",
+                "danger"
+            )
+
+    return render_template(
+        "customer/email_preferences.html",
+        preference=preference
+    )

@@ -108,6 +108,9 @@
     <script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
 
     <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
+    {% if current_user.is_authenticated and current_user.role == 'Customer' %}
+    <script src="{{ url_for('static', filename='js/sidebar_chat_history.js') }}"></script>
+    {% endif %}
 
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 
@@ -138,6 +141,12 @@
 
             const currentPath = window.location.pathname;
             let refreshLocked = false;
+
+            const isLiveChatPage =
+                currentPath === "/customer/chat" ||
+                currentPath.startsWith("/customer/view-ticket/") ||
+                currentPath.startsWith("/agent/view-ticket/") ||
+                currentPath.startsWith("/admin/view-ticket/");
 
             const refreshPages = [
                 "/admin/dashboard",
@@ -204,18 +213,38 @@
 
             function safeRefresh(reason) {
 
+                if (isLiveChatPage) {
+                    console.log("✅ Silent update only. No page reload:", reason);
+
+                    window.dispatchEvent(
+                        new CustomEvent("silent-dashboard-update", {
+                            detail: {
+                                reason: reason || "updated"
+                            }
+                        })
+                    );
+
+                    refreshLocked = false;
+                    return;
+                }
                 const softOnlyEvents = [
                     "customer_live_refresh",
                     "global_ticket_updated",
                     "new_comment",
+
+                    "new_notification",
+                    "notification_read",
                     "notification_updated",
                     "sidebar_counts_updated",
+
                     "ticket_created",
                     "ticket_updated",
                     "ticket_reopened",
                     "ticket_closed",
+                    "ticket_escalated",
                     "support_ticket_started",
                     "ticket_confirmed_solved",
+
                     "analytics_updated"
                 ];
 
@@ -224,7 +253,9 @@
 
                     window.dispatchEvent(
                         new CustomEvent("livechat:soft-refresh", {
-                            detail: { reason: reason || "updated" }
+                            detail: {
+                                reason: reason || "updated"
+                            }
                         })
                     );
 
@@ -232,16 +263,11 @@
                     return;
                 }
 
-                const isTicketPage =
-                    currentPath.startsWith("/admin/view-ticket/") ||
-                    currentPath.startsWith("/agent/view-ticket/") ||
-                    currentPath.startsWith("/customer/view-ticket/");
-
-                if (isTicketPage && softOnlyEvents.includes(reason)) {
-                    console.log("✅ Ignored hard refresh on live ticket page:", reason);
-                    refreshLocked = false;
-                    return;
-                }
+                /*
+                ============================================================
+                NORMAL PAGE AUTO REFRESH
+                ============================================================
+                */
 
                 if (!shouldRefreshCurrentPage()) {
                     return;

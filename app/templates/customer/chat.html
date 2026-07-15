@@ -1,56 +1,177 @@
 ﻿{% extends 'layouts/dashboard.base.html' %}
 
 {% block header %}
-    {% block title %}Customer Support Chat{% endblock %}
+{% block title %}New Support Request{% endblock %}
 {% endblock %}
 
 {% block text %}
-    Continue your AI and live support conversation.
+Start a new IT support conversation or continue an existing one.
 {% endblock %}
 
 {% block content %}
 
 <link rel="stylesheet"
-      href="{{ url_for('static', filename='widget/widget.css') }}">
+      href="{{ url_for('static', filename='css/support_requests.css') }}">
 
-<style>
-    .customer-support-page {
-        max-width: 1000px;
-    }
+<div class="support-page">
 
-        .customer-support-page #support-widget-panel {
-            position: relative !important;
-            right: auto !important;
-            bottom: auto !important;
-            width: 100% !important;
-            max-width: 100% !important;
-            height: 720px !important;
-            display: block !important;
-            border-radius: 16px !important;
-            z-index: 1 !important;
-        }
+    <main class="support-chat-panel">
 
-        .customer-support-page #support-widget-launcher {
-            display: none !important;
-        }
+        <div class="support-chat-header">
 
-        .customer-support-page .support-widget-shell {
-            height: 100%;
-        }
+            <div>
 
-        .customer-support-page .support-widget-messages {
-            height: 590px !important;
-        }
-</style>
+                <h4 id="supportChatTitle">
+                    IT Support Assistant
+                </h4>
 
-<div class="content-box mb-3 content-lighten customer-support-page">
+                <p id="supportChatSubtitle">
+                    Select your issue type to begin the IT triage process.
+                </p>
 
-    <div id="support-widget-embedded"></div>
+            </div>
+
+            <div id="supportTicketMeta"
+                 class="support-ticket-meta"
+                 style="display:none;">
+
+                <span id="supportStatusBadge"
+                      class="support-badge">
+                    Open
+                </span>
+
+                <span id="supportPriorityBadge"
+                      class="support-badge">
+                    Medium
+                </span>
+
+                <span id="supportCategoryBadge"
+                      class="support-badge">
+                    General
+                </span>
+
+            </div>
+
+        </div>
+
+
+        <div id="supportMessages"
+             class="support-messages">
+
+            <div class="support-system-card">
+
+                <h5>
+                    Welcome to the IT Service Desk
+                </h5>
+
+                <p>
+                    Select the type of issue below.
+                    The system will guide you through the standard IT triage process before attempting an AI solution.
+                </p>
+
+                <div class="triage-grid">
+
+                    <button class="triage-option"
+                            data-issue="Login / Account Access">
+                        <i class="fa fa-user-lock"></i>
+                        Login / Account Access
+                    </button>
+
+                    <button class="triage-option"
+                            data-issue="Password Reset">
+                        <i class="fa fa-key"></i>
+                        Password Reset
+                    </button>
+
+                    <button class="triage-option"
+                            data-issue="Email Issue">
+                        <i class="fa fa-envelope"></i>
+                        Email Issue
+                    </button>
+
+                    <button class="triage-option"
+                            data-issue="Network Issue">
+                        <i class="fa fa-wifi"></i>
+                        Network Issue
+                    </button>
+
+                    <button class="triage-option"
+                            data-issue="Software Issue">
+                        <i class="fa fa-desktop"></i>
+                        Software Issue
+                    </button>
+
+                    <button class="triage-option"
+                            data-issue="Hardware Issue">
+                        <i class="fa fa-laptop"></i>
+                        Hardware Issue
+                    </button>
+
+                    <button class="triage-option"
+                            data-issue="Security Issue">
+                        <i class="fa fa-shield"></i>
+                        Security Issue
+                    </button>
+
+                    <button class="triage-option"
+                            data-issue="Printer / Peripheral">
+                        <i class="fa fa-print"></i>
+                        Printer / Peripheral
+                    </button>
+
+                    <button class="triage-option"
+                            data-issue="Other IT Support">
+                        <i class="fa fa-question-circle"></i>
+                        Other IT Support
+                    </button>
+
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <div class="support-input-area">
+
+            <button id="supportAttachmentBtn"
+                    type="button"
+                    class="support-icon-btn"
+                    title="Attach screenshot or document">
+
+                <i class="fa fa-paperclip"></i>
+
+            </button>
+
+            <input id="supportAttachmentInput"
+                   type="file"
+                   hidden
+                   accept=".png,.jpg,.jpeg,.gif,.pdf,.doc,.docx,.xlsx,.txt">
+
+            <textarea id="supportInput"
+                      rows="1"
+                      placeholder="Answer the current triage question..."
+                      disabled></textarea>
+
+            <button id="supportSendBtn"
+                    type="button"
+                    class="support-send-btn"
+                    disabled>
+
+                Send
+
+            </button>
+
+        </div>
+
+    </main>
 
 </div>
 
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+
 <script src="{{ url_for('static', filename='js/live_chat_core.js') }}"></script>
-<script src="{{ url_for('static', filename='js/customer_support_box.js') }}"></script>
+
+<script src="{{ url_for('static', filename='js/support_requests.js') }}"></script>
 
 {% endblock %}

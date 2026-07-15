@@ -2,15 +2,54 @@
 
 {% block style %}
 {{ super() }}
-<link rel="stylesheet" href="{{ url_for('static', filename='vendor/datatables/css/datatables.bootstrap4.min.css') }}">
+
+<link rel="stylesheet"
+      href="{{ url_for(
+          'static',
+          filename='vendor/datatables/css/datatables.bootstrap4.min.css'
+      ) }}">
+
+<style>
+    .ticket-table-wrap {
+        overflow-x: auto;
+    }
+
+    .ticket-number {
+        white-space: nowrap;
+    }
+
+    .ticket-subject {
+        min-width: 170px;
+    }
+
+    .ticket-customer,
+    .ticket-assignee {
+        min-width: 130px;
+    }
+
+    .ticket-date {
+        white-space: nowrap;
+        min-width: 155px;
+    }
+
+    .ticket-status-badge,
+    .ticket-priority-badge {
+        min-width: 70px;
+        display: inline-block;
+        text-align: center;
+    }
+</style>
 {% endblock %}
 
 {% block header %}
-    {% block title %}All Tickets{% endblock %}
+    {% block title %}
+        All Tickets
+    {% endblock %}
 {% endblock %}
 
 {% block text %}
-    Monitor every ticket in the system, including assigned, unassigned, open, pending, solved, and closed tickets.
+    Monitor every ticket in the system, including assigned,
+    unassigned, open, pending, escalated, solved, and closed tickets.
 {% endblock %}
 
 {% block content %}
@@ -23,97 +62,241 @@
 
     {% if tickets %}
 
-    <table id="allTicketsTable" class="table table-striped table-borderless table-responsive-sm">
-        <thead>
-            <tr>
-                <th>Ticket</th>
-                <th>Subject</th>
-                <th>Customer</th>
-                <th>Assignee</th>
-                <th>Priority</th>
-                <th>Status</th>
-                <th>Created</th>
-                <th>Action</th>
-            </tr>
-        </thead>
+    <div class="ticket-table-wrap">
 
-        <tbody>
-            {% for ticket in tickets %}
-            <tr>
-                <td>
-                    <strong>#{{ ticket.number }}</strong>
-                </td>
+        <table id="allTicketsTable"
+               class="table table-striped table-borderless">
 
-                <td>
-                    {% if ticket.subject|length > 45 %}
-                    {{ ticket.subject[:42] }}...
-                    {% else %}
-                    {{ ticket.subject }}
-                    {% endif %}
-                </td>
+            <thead>
+                <tr>
+                    <th>Ticket</th>
+                    <th>Subject</th>
+                    <th>Customer</th>
+                    <th>Assignee</th>
+                    <th>Priority</th>
+                    <th>Status</th>
+                    <th>Last Updated</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
 
-                <td>{{ ticket.author.name }}</td>
+            <tbody>
 
-                <td>
-                    {% if ticket.owner %}
-                    {{ ticket.owner.name }}
-                    {% else %}
-                    <span class="badge badge-warning">Unassigned</span>
-                    {% endif %}
-                </td>
+                {% for ticket in tickets %}
 
-                <td>
-                    {% if ticket.priority %}
-                    {% if ticket.priority.priority == 'Urgent' %}
-                    <span class="badge badge-danger">Urgent</span>
-                    {% elif ticket.priority.priority == 'High' %}
-                    <span class="badge badge-warning">High</span>
-                    {% elif ticket.priority.priority == 'Medium' %}
-                    <span class="badge badge-info">Medium</span>
-                    {% else %}
-                    <span class="badge badge-secondary">Low</span>
-                    {% endif %}
-                    {% else %}
-                    <span class="text-muted">-</span>
-                    {% endif %}
-                </td>
+                {% set priority_name =
+                ticket.priority.priority
+                if ticket.priority
+                else ''
+                %}
 
-                <td>
-                    {% if ticket.status %}
-                    {% if ticket.status.status == 'Open' %}
-                    <span class="badge badge-primary">Open</span>
-                    {% elif ticket.status.status == 'Pending' %}
-                    <span class="badge badge-warning">Pending</span>
-                    {% elif ticket.status.status == 'Solved' %}
-                    <span class="badge badge-success">Solved</span>
-                    {% elif ticket.status.status == 'Closed' %}
-                    <span class="badge badge-dark">Closed</span>
-                    {% else %}
-                    <span class="badge badge-secondary">{{ ticket.status.status }}</span>
-                    {% endif %}
-                    {% else %}
-                    <span class="text-muted">-</span>
-                    {% endif %}
-                </td>
+                {% set status_name =
+                ticket.status.status
+                if ticket.status
+                else ''
+                %}
 
-                <td>{{ ticket.created_at.strftime('%d %b %Y, %H:%M') }}</td>
+                {% set status_lower =
+                status_name|lower
+                %}
 
-                <td>
-                    <a href="{{ url_for('admin.view_ticket', id=ticket.id) }}"
-                       class="btn btn-primary btn-sm">
-                        Open
-                    </a>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+                {% set display_date =
+                ticket.updated_at
+                or ticket.created_at
+                %}
+
+                <tr>
+
+                    <td class="ticket-number">
+                        <strong>
+                            #{{ ticket.number }}
+                        </strong>
+                    </td>
+
+                    <td class="ticket-subject">
+
+                        {% set subject =
+                        ticket.subject
+                        or 'No subject'
+                        %}
+
+                        {% if subject|length > 45 %}
+                        {{ subject[:42] }}...
+                        {% else %}
+                        {{ subject }}
+                        {% endif %}
+
+                    </td>
+
+                    <td class="ticket-customer">
+
+                        {% if ticket.author %}
+                        {{ ticket.author.name }}
+                        {% else %}
+                        <span class="text-muted">
+                            Unknown customer
+                        </span>
+                        {% endif %}
+
+                    </td>
+
+                    <td class="ticket-assignee">
+
+                        {% if ticket.owner %}
+                        {{ ticket.owner.name }}
+                        {% else %}
+                        <span class="badge badge-warning">
+                            Unassigned
+                        </span>
+                        {% endif %}
+
+                    </td>
+
+                    <td>
+
+                        {% if priority_name == 'Urgent' %}
+
+                        <span class="badge badge-danger ticket-priority-badge">
+                            Urgent
+                        </span>
+
+                        {% elif priority_name == 'High' %}
+
+                        <span class="badge badge-warning ticket-priority-badge">
+                            High
+                        </span>
+
+                        {% elif priority_name == 'Medium' %}
+
+                        <span class="badge badge-info ticket-priority-badge">
+                            Medium
+                        </span>
+
+                        {% elif priority_name == 'Low' %}
+
+                        <span class="badge badge-secondary ticket-priority-badge">
+                            Low
+                        </span>
+
+                        {% else %}
+
+                        <span class="text-muted">
+                            -
+                        </span>
+
+                        {% endif %}
+
+                    </td>
+
+                    <td>
+
+                        {% if status_lower == 'open' %}
+
+                        <span class="badge badge-primary ticket-status-badge">
+                            Open
+                        </span>
+
+                        {% elif status_lower == 'pending' %}
+
+                        <span class="badge badge-warning ticket-status-badge">
+                            Pending
+                        </span>
+
+                        {% elif status_lower == 'escalated' %}
+
+                        <span class="badge badge-danger ticket-status-badge">
+                            Escalated
+                        </span>
+
+                        {% elif status_lower == 'waiting for customer' %}
+
+                        <span class="badge badge-info ticket-status-badge">
+                            Waiting
+                        </span>
+
+                        {% elif status_lower == 'solved' %}
+
+                        <span class="badge badge-success ticket-status-badge">
+                            Solved
+                        </span>
+
+                        {% elif status_lower == 'closed' %}
+
+                        <span class="badge badge-dark ticket-status-badge">
+                            Closed
+                        </span>
+
+                        {% elif status_name %}
+
+                        <span class="badge badge-secondary ticket-status-badge">
+                            {{ status_name }}
+                        </span>
+
+                        {% else %}
+
+                        <span class="text-muted">
+                            -
+                        </span>
+
+                        {% endif %}
+
+                    </td>
+
+                    <td class="ticket-date"
+                        data-order="{{
+                            display_date.strftime('%Y%m%d%H%M%S')
+                            if display_date
+                            else '00000000000000'
+                        }}">
+
+                        {% if display_date %}
+                        {{
+ display_date.strftime(
+                                '%d %b %Y, %H:%M'
+                            )
+                        }}
+                        {% else %}
+                        -
+                        {% endif %}
+
+                    </td>
+
+                    <td>
+
+                        <a href="{{ url_for(
+                               'admin.view_ticket',
+                               id=ticket.id
+                           ) }}"
+                           class="btn btn-primary btn-sm">
+
+                            View
+
+                        </a>
+
+                    </td>
+
+                </tr>
+
+                {% endfor %}
+
+            </tbody>
+
+        </table>
+
+    </div>
 
     {% else %}
 
     <div class="text-center py-4">
-        <h6>No tickets found</h6>
-        <p class="text-muted mb-0">There are no tickets in the system yet.</p>
+
+        <h6>
+            No tickets found
+        </h6>
+
+        <p class="text-muted mb-0">
+            There are no tickets in the system yet.
+        </p>
+
     </div>
 
     {% endif %}
@@ -124,16 +307,52 @@
 
 {% block script %}
 {{ super() }}
-<script src="{{ url_for('static', filename='vendor/datatables/js/jquery.datatables.min.js') }}"></script>
-<script src="{{ url_for('static', filename='vendor/datatables/js/datatables.bootstrap4.min.js') }}"></script>
+
+<script src="{{ url_for(
+    'static',
+    filename='vendor/datatables/js/jquery.datatables.min.js'
+) }}"></script>
+
+<script src="{{ url_for(
+    'static',
+    filename='vendor/datatables/js/datatables.bootstrap4.min.js'
+) }}"></script>
 
 <script>
-    $(document).ready(function () {
-        $('#allTicketsTable').DataTable({
-            ordering: true,
-            pageLength: 10,
-            order: [[6, 'desc']]
-        });
-    });
+    document.addEventListener(
+        "DOMContentLoaded",
+        function () {
+            const table =
+                document.getElementById(
+                    "allTicketsTable"
+                );
+
+            if (
+                !table ||
+                typeof window.jQuery === "undefined" ||
+                !jQuery.fn.DataTable
+            ) {
+                return;
+            }
+
+            jQuery(table).DataTable({
+                ordering: true,
+                searching: true,
+                pageLength: 10,
+                lengthMenu: [
+                    [10, 25, 50, 100],
+                    [10, 25, 50, 100]
+                ],
+                order: [[6, "desc"]],
+                columnDefs: [
+                    {
+                        orderable: false,
+                        targets: [7]
+                    }
+                ]
+            });
+        }
+    );
 </script>
+
 {% endblock %}

@@ -1,0 +1,49 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block content %}
+
+<div class="content-box">
+
+    <form method="POST">
+
+        {{ form.csrf_token }}
+
+        <div class="form-group">
+
+            <label>
+                New Email
+            </label>
+
+            {{
+ form.email(
+class="form-control"
+)
+            }}
+
+        </div>
+
+        <div class="form-group">
+
+            <label>
+                Current Password
+            </label>
+
+            {{
+ form.password(
+class="form-control"
+)
+            }}
+
+        </div>
+
+        <button class="btn btn-primary">
+
+            Update Email
+
+        </button>
+
+    </form>
+
+</div>
+
+{% endblock %}
