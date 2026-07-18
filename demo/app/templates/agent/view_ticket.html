@@ -1,0 +1,1637 @@
+﻿{% from 'macros/render_select.html' import render_select %}
+
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block style %}
+{{ super() }}
+
+<link rel="stylesheet"
+      href="{{ url_for(
+          'static',
+          filename='vendor/froala-editor/css/froala_editor.pkgd.min.css'
+      ) }}">
+
+<link rel="stylesheet"
+      href="{{ url_for(
+          'static',
+          filename='vendor/froala-editor/css/froala_style.min.css'
+      ) }}">
+
+<style>
+    .support-chat-shell {
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        overflow: hidden;
+        background: #ffffff;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+    }
+
+    .support-chat-header {
+        background: #111827;
+        color: #ffffff;
+        padding: 14px 18px;
+    }
+
+        .support-chat-header strong {
+            display: block;
+            font-size: 16px;
+        }
+
+        .support-chat-header small {
+            display: block;
+            margin-top: 3px;
+            opacity: 0.8;
+        }
+
+    .support-chat-body {
+        height: 390px;
+        overflow-y: auto;
+        padding: 16px;
+        background: #f8fafc;
+    }
+
+    .chat-row {
+        display: flex;
+        margin-bottom: 12px;
+    }
+
+    .chat-left {
+        justify-content: flex-start;
+    }
+
+    .chat-right {
+        justify-content: flex-end;
+    }
+
+    .chat-bubble {
+        max-width: 72%;
+        padding: 10px 13px;
+        border-radius: 16px;
+        font-size: 14px;
+        line-height: 1.45;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+
+    .customer-bubble {
+        background: #ffffff;
+        color: #111827;
+        border: 1px solid #e5e7eb;
+        border-bottom-left-radius: 5px;
+    }
+
+    .agent-bubble {
+        background: #2563eb;
+        color: #ffffff;
+        border-bottom-right-radius: 5px;
+    }
+
+    .system-bubble {
+        background: #ecfdf5;
+        color: #065f46;
+        border: 1px solid #a7f3d0;
+        max-width: 85%;
+    }
+
+    .chat-time {
+        margin-top: 5px;
+        font-size: 11px;
+        opacity: 0.7;
+    }
+
+    .support-chat-footer {
+        display: flex;
+        gap: 10px;
+        padding: 12px;
+        border-top: 1px solid #e5e7eb;
+        background: #ffffff;
+    }
+
+        .support-chat-footer textarea {
+            resize: none;
+            min-height: 48px;
+        }
+
+    .enter-chat-note {
+        color: #6b7280;
+        font-size: 13px;
+        margin-left: 8px;
+    }
+
+    .ticket-action-group {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+    }
+
+        .ticket-action-group .btn {
+            margin: 0;
+        }
+
+    .readonly-ticket-value {
+        font-weight: 600;
+        color: #374151;
+    }
+
+    .attachment-item {
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+
+    @media (max-width: 768px) {
+        .chat-bubble {
+            max-width: 90%;
+        }
+
+        .support-chat-footer {
+            flex-direction: column;
+        }
+
+            .support-chat-footer button {
+                width: 100%;
+            }
+    }
+</style>
+{% endblock %}
+
+{% block header %}
+    {% block title %}
+        Ticket Information
+    {% endblock %}
+{% endblock %}
+
+{% block text %}
+    Review ticket details, update status, or enter live support chat.
+{% endblock %}
+
+{% block button %}
+<button type="button"
+        class="btn btn-danger btn-sm"
+        data-toggle="modal"
+        data-target="#deleteModal">
+    Delete
+</button>
+{% endblock %}
+
+{% block content %}
+
+<div class="max-w-1000">
+    {% include 'includes/alert.html' %}
+</div>
+
+<div class="content-box mb-3 content-lighten max-w-1000">
+
+    <form action="{{ url_for(
+              'agent.view_ticket',
+              id=ticket.id
+          ) }}"
+          method="POST">
+
+        {{ form.csrf_token }}
+
+        <table class="table table-striped table-borderless">
+            <tbody>
+
+                <tr>
+                    <td>Date Created</td>
+
+                    <td>
+                        {% if ticket.created_at %}
+                        {{
+ ticket.created_at.strftime(
+                                '%d %b %Y, %H:%M'
+                            )
+                        }}
+                        {% else %}
+                        <span class="text-muted">
+                            Unknown
+                        </span>
+                        {% endif %}
+                    </td>
+                </tr>
+
+                <tr>
+                    <td class="w-25">
+                        Number
+                    </td>
+
+                    <td>
+                        {{ ticket.number }}
+                    </td>
+                </tr>
+
+                <tr>
+                    <td>
+                        Author
+                    </td>
+
+                    <td>
+                        {% if ticket.author %}
+                        {{ ticket.author.name }}
+                        {% else %}
+                        <span class="text-muted">
+                            Deleted or unavailable user
+                        </span>
+                        {% endif %}
+                    </td>
+                </tr>
+
+                <tr>
+                    <td>
+                        E-mail address
+                    </td>
+
+                    <td>
+                        {% if ticket.author and ticket.author.email %}
+
+                        <a href="mailto:{{ ticket.author.email }}">
+                            {{ ticket.author.email }}
+                        </a>
+
+                        {% else %}
+
+                        <span class="text-muted">
+                            No email available
+                        </span>
+
+                        {% endif %}
+                    </td>
+                </tr>
+
+                <tr>
+                    <td>
+                        Subject
+                    </td>
+
+                    <td>
+                        {{ ticket.subject or 'No subject' }}
+                    </td>
+                </tr>
+
+                <tr>
+                    <td>
+                        Body
+                    </td>
+
+                    <td>
+                        <div class="fr-view">
+                            {{ ticket.body|default('', true)|safe }}
+                        </div>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td>
+                        Assignee
+                    </td>
+
+                    <td>
+                        {% if is_closed %}
+
+                        <span class="readonly-ticket-value">
+                            {% if ticket.owner %}
+                            {{ ticket.owner.name }}
+                            {% else %}
+                            Unassigned
+                            {% endif %}
+                        </span>
+
+                        {% else %}
+
+                        <div class="form-group row mb-0">
+                            <div class="col-md-6">
+
+                                {{
+ render_select(
+                                        form.owner,
+                                        "Please select a valid assignee"
+                                    )
+                                }}
+
+                            </div>
+                        </div>
+
+                        {% endif %}
+                    </td>
+                </tr>
+
+                <tr>
+                    <td>
+                        Category
+                    </td>
+
+                    <td>
+                        {% if ticket.category %}
+                        {{ ticket.category.category }}
+                        {% else %}
+                        <span class="text-muted">
+                            No category
+                        </span>
+                        {% endif %}
+                    </td>
+                </tr>
+
+                <tr>
+                    <td>
+                        Priority
+                    </td>
+
+                    <td>
+                        {% if is_closed %}
+
+                        <span class="readonly-ticket-value">
+                            {% if ticket.priority %}
+                            {{ ticket.priority.priority }}
+                            {% else %}
+                            No priority assigned
+                            {% endif %}
+                        </span>
+
+                        {% else %}
+
+                        <div class="form-group row mb-0">
+                            <div class="col-md-6">
+
+                                {{
+ render_select(
+                                        form.priority,
+                                        "Please select a valid priority"
+                                    )
+                                }}
+
+                            </div>
+                        </div>
+
+                        {% endif %}
+                    </td>
+                </tr>
+
+                <tr>
+                    <td>
+                        Status
+                    </td>
+
+                    <td>
+                        {% if is_closed %}
+
+                        <span class="badge badge-dark">
+                            Closed
+                        </span>
+
+                        <small class="text-muted d-block mt-1">
+                            Reopen this ticket before making changes.
+                        </small>
+
+                        {% else %}
+
+                        <div class="form-group row mb-0">
+                            <div class="col-md-6">
+
+                                {{
+ render_select(
+                                        form.status,
+                                        "Please select a valid status"
+                                    )
+                                }}
+
+                            </div>
+                        </div>
+
+                        {% endif %}
+                    </td>
+                </tr>
+
+                <tr>
+                    <td>
+                        Attachments
+                    </td>
+
+                    <td id="ticketAttachmentList">
+
+                        {% if ticket.file_link and ticket.author_id %}
+
+                        <div class="mb-2 attachment-item">
+
+                            <a href="{{ url_for(
+                                       'agent.download_attachment',
+                                       id=ticket.author_id,
+                                       filename=ticket.file_link
+                                   ) }}">
+
+                                {{
+ ticket.orig_file
+                                       or 'Download attachment'
+                                }}
+
+                            </a>
+
+                        </div>
+
+                        {% elif ticket.file_link %}
+
+                        <div class="mb-2">
+
+                            <span class="text-muted">
+                                The attachment record exists, but its
+                                customer account is unavailable.
+                            </span>
+
+                        </div>
+
+                        {% endif %}
+
+                        {% set attachment_namespace =
+                        namespace(found=false)
+                        %}
+
+                        {% for attachment in comments %}
+
+                        {% set attachment_text =
+                        attachment.comment|string
+                        %}
+
+                        {% if
+                        'Attachment uploaded:'
+                        in attachment_text
+                        %}
+
+                        {% set attachment_namespace.found =
+                        true
+                        %}
+
+                        <div class="mb-2 attachment-item">
+
+                            {{ attachment.comment|safe }}
+
+                            <small class="text-muted d-block">
+
+                                Uploaded by
+
+                                {% if attachment.user %}
+                                {{ attachment.user.name }}
+                                {% else %}
+                                Deleted user
+                                {% endif %}
+
+                                {% if attachment.created_at %}
+                                ·
+                                {{
+ attachment.created_at.strftime(
+                                                '%d %b %Y, %H:%M'
+                                            )
+                                }}
+                                {% endif %}
+
+                            </small>
+
+                        </div>
+
+                        {% endif %}
+
+                        {% endfor %}
+
+                        {% if
+                        not ticket.file_link
+                        and not attachment_namespace.found
+                        %}
+
+                        <span class="text-muted"
+                              id="noAttachmentText">
+                            No attachment
+                        </span>
+
+                        {% endif %}
+
+                    </td>
+                </tr>
+
+                <tr>
+                    <td></td>
+
+                    <td>
+
+                        <div class="ticket-action-group">
+
+                            {% if not is_closed %}
+
+                            <button type="submit"
+                                    class="btn btn-primary btn-sm">
+                                Update
+                            </button>
+
+                            {% else %}
+
+                            <span class="badge badge-dark">
+                                Closed
+                            </span>
+
+                            {% endif %}
+
+                            <a href="{{ url_for(
+                                   'agent.my_tickets'
+                               ) }}"
+                               class="btn btn-secondary btn-sm">
+                                Back
+                            </a>
+
+                            {% if is_closed %}
+
+                            <button type="submit"
+                                    form="reopenTicketForm"
+                                    class="btn btn-warning btn-sm">
+
+                                <i class="fa fa-undo"></i>
+                                Reopen Ticket
+
+                            </button>
+
+                            {% endif %}
+
+                            {% set current_status_name =
+                            ticket.status.status
+                            if ticket.status
+                            else ''
+                            %}
+
+                            {% if
+                            not is_closed
+                            and current_status_name != 'Escalated'
+                            %}
+
+                            <button type="submit"
+                                    form="escalateTicketForm"
+                                    class="btn btn-warning btn-sm">
+
+                                Escalate to Admin
+
+                            </button>
+
+                            {% endif %}
+
+                            <button type="button"
+                                    id="enterChatBtn"
+                                    class="btn btn-dark btn-sm">
+
+                                Enter Chat
+
+                            </button>
+
+                            <span class="enter-chat-note">
+                                Open live conversation with customer
+                            </span>
+
+                        </div>
+
+                    </td>
+                </tr>
+
+            </tbody>
+        </table>
+
+    </form>
+
+    {% if is_closed %}
+
+    <form id="reopenTicketForm"
+          action="{{ url_for(
+                  'agent.reopen_ticket',
+                  id=ticket.id
+              ) }}"
+          method="POST"
+          style="display:none;">
+
+        <input type="hidden"
+               name="csrf_token"
+               value="{{ csrf_token() }}">
+
+    </form>
+
+    {% endif %}
+
+    {% set current_status_name =
+    ticket.status.status
+    if ticket.status
+    else ''
+    %}
+
+    {% if
+    not is_closed
+    and current_status_name != 'Escalated'
+    %}
+
+    <form id="escalateTicketForm"
+          action="{{ url_for(
+                  'agent.escalate_ticket',
+                  id=ticket.id
+              ) }}"
+          method="POST"
+          style="display:none;">
+
+        <input type="hidden"
+               name="csrf_token"
+               value="{{ csrf_token() }}">
+
+    </form>
+
+    {% endif %}
+
+</div>
+
+{% if is_closed %}
+
+<div class="content-box mb-3 content-lighten max-w-1000 text-center">
+
+    <p class="mb-2">
+
+        This ticket is closed. It cannot be edited or continued
+        until it is reopened.
+
+    </p>
+
+    <form action="{{ url_for(
+              'agent.reopen_ticket',
+              id=ticket.id
+          ) }}"
+          method="POST"
+          class="d-inline">
+
+        <input type="hidden"
+               name="csrf_token"
+               value="{{ csrf_token() }}">
+
+        <button type="submit"
+                class="btn btn-warning btn-sm">
+
+            <i class="fa fa-undo"></i>
+            Reopen Ticket
+
+        </button>
+
+    </form>
+
+</div>
+
+{% endif %}
+
+<div id="supportChatBox"
+     class="content-box mb-3 content-lighten max-w-1000"
+     style="display:none;">
+
+    <div class="support-chat-shell">
+
+        <div class="support-chat-header">
+
+            <strong>
+                Live Support Chat
+            </strong>
+
+            <small>
+
+                Ticket #{{ ticket.number }}
+
+                · Customer:
+
+                {% if ticket.author %}
+                {{ ticket.author.name }}
+                {% else %}
+                Deleted user
+                {% endif %}
+
+                · Status:
+
+                {% if ticket.status %}
+                {{ ticket.status.status }}
+                {% else %}
+                Unknown
+                {% endif %}
+
+            </small>
+
+        </div>
+
+        <div id="live-comments"
+             class="support-chat-body">
+
+            {% if comments %}
+
+            {% for comment in comments %}
+
+            {% set comment_text =
+            comment.comment|string
+            %}
+
+            {% set comment_user =
+            comment.user
+            %}
+
+            {% set comment_role =
+            comment_user.role
+            if comment_user
+            else 'System'
+            %}
+
+            {% set comment_name =
+            comment_user.name
+            if comment_user
+            else 'System'
+            %}
+
+            {% set is_system_message =
+            comment_text.startswith('✅')
+            or comment_text.startswith('🚨')
+            or comment_text.startswith('🔒')
+            or comment_text.startswith('🔓')
+            or comment_text.startswith('🔄')
+            or comment_text.startswith(
+            'Ticket reopened'
+            )
+            or comment_text.startswith(
+            'Ticket closed'
+            )
+            or comment_text.startswith(
+            'Ticket escalated'
+            )
+            or comment_text.startswith(
+            'Support agent'
+            )
+            or comment_text.startswith(
+            'Customer wait-time reminder'
+            )
+            or comment_text.startswith(
+            'Staff alert sent'
+            )
+            or comment_text.startswith(
+            'Reminder sent to customer'
+            )
+            or comment_text.startswith(
+            '<strong>
+                Current AI / FAQ Conversation'
+                )
+                or comment_text.startswith(
+                '<strong>
+                    Previous AI / FAQ Conversation'
+                    )
+                    %}
+
+                    {% if is_system_message %}
+
+                    <div class="chat-row chat-left">
+
+                        <div class="chat-bubble system-bubble">
+
+                            <span>
+                                {{ comment.comment|safe }}
+                            </span>
+
+                            <div class="chat-time">
+
+                                {% if comment.created_at %}
+
+                                {{
+ comment.created_at.strftime(
+                                            '%d %b %Y, %H:%M'
+                                        )
+                                }}
+
+                                {% endif %}
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                    {% elif
+                    comment_role|lower == 'customer'
+                    %}
+
+                    <div class="chat-row chat-left">
+
+                        <div class="chat-bubble customer-bubble">
+
+                            <strong>
+                                {{ comment_name }}
+                            </strong>
+
+                            <br>
+
+                            <span>
+                                {{ comment.comment|safe }}
+                            </span>
+
+                            <div class="chat-time">
+
+                                {% if comment.created_at %}
+
+                                {{
+ comment.created_at.strftime(
+                                            '%d %b %Y, %H:%M'
+                                        )
+                                }}
+
+                                {% endif %}
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                    {% else %}
+
+                    <div class="chat-row chat-right">
+
+                        <div class="chat-bubble agent-bubble">
+
+                            <strong>
+                                {{ comment_name }}
+                            </strong>
+
+                            <br>
+
+                            <span>
+                                {{ comment.comment|safe }}
+                            </span>
+
+                            <div class="chat-time">
+
+                                {% if comment.created_at %}
+
+                                {{
+ comment.created_at.strftime(
+                                            '%d %b %Y, %H:%M'
+                                        )
+                                }}
+
+                                {% endif %}
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                    {% endif %}
+
+                    {% endfor %}
+
+                    {% else %}
+
+                    <div class="text-center text-muted py-4">
+                        No support messages yet.
+                    </div>
+
+                    {% endif %}
+
+        </div>
+
+        {% if not is_closed %}
+
+        <form action="{{ url_for(
+                      'agent.comment_ticket',
+                      id=ticket.id
+                  ) }}"
+              method="POST"
+              class="support-chat-footer"
+              id="chatForm">
+
+            {{ comment_form.csrf_token }}
+
+            <textarea name="comment"
+                      id="comment"
+                      class="form-control"
+                      placeholder="Type your reply to the customer..."
+                      rows="2"
+                      required></textarea>
+
+            <button type="submit"
+                    class="btn btn-primary"
+                    id="sendChatBtn">
+                Send
+            </button>
+
+        </form>
+
+        {% else %}
+
+        <div class="p-3 bg-warning text-dark">
+
+            This ticket has been closed. Chat is read-only.
+            Reopen it to continue.
+
+        </div>
+
+        {% endif %}
+
+    </div>
+
+</div>
+
+<div class="modal fade"
+     id="deleteModal"
+     tabindex="-1"
+     role="dialog"
+     aria-labelledby="deleteModalLabel"
+     aria-hidden="true">
+
+    <div class="modal-dialog modal-dialog-centered"
+         role="document">
+
+        <div class="modal-content">
+
+            <div class="modal-header">
+
+                <h5 class="modal-title"
+                    id="deleteModalLabel">
+
+                    Delete Confirmation
+
+                </h5>
+
+                <button type="button"
+                        class="close"
+                        data-dismiss="modal"
+                        aria-label="Close">
+
+                    <span aria-hidden="true">
+                        &times;
+                    </span>
+
+                </button>
+
+            </div>
+
+            <div class="modal-body">
+
+                <p>
+
+                    Are you sure you want to delete this ticket?
+                    This action cannot be undone.
+
+                </p>
+
+            </div>
+
+            <div class="modal-footer">
+
+                <button type="button"
+                        class="btn btn-secondary"
+                        data-dismiss="modal">
+                    Close
+                </button>
+
+                <form action="{{ url_for(
+                          'agent.delete_ticket',
+                          uid=ticket.author_id or 0,
+                          tid=ticket.id
+                      ) }}"
+                      method="POST">
+
+                    <input type="hidden"
+                           name="csrf_token"
+                           value="{{ csrf_token() }}">
+
+                    <button type="submit"
+                            class="btn btn-danger">
+
+                        Delete
+
+                    </button>
+
+                </form>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endblock %}
+
+{% block script %}
+{{ super() }}
+
+<script src="{{ url_for(
+    'static',
+    filename='js/live_chat_core.js'
+) }}"></script>
+
+<script>
+document.addEventListener(
+    "DOMContentLoaded",
+    function () {
+        const enterChatBtn =
+            document.getElementById(
+                "enterChatBtn"
+            );
+
+        const supportChatBox =
+            document.getElementById(
+                "supportChatBox"
+            );
+
+        const liveComments =
+            document.getElementById(
+                "live-comments"
+            );
+
+        const chatForm =
+            document.getElementById(
+                "chatForm"
+            );
+
+        const commentInput =
+            document.getElementById(
+                "comment"
+            );
+
+        const sendChatBtn =
+            document.getElementById(
+                "sendChatBtn"
+            );
+
+        const attachmentContainer =
+            document.getElementById(
+                "ticketAttachmentList"
+            );
+
+        const ticketId =
+            Number({{ ticket.id|tojson }});
+
+        const currentUserRole =
+            {{ current_user.role|default('', true)|tojson }};
+
+        const currentUserName =
+            {{ current_user.name|default('', true)|tojson }};
+
+        const chatStorageKey =
+            `ticket-chat-open-${ticketId}`;
+
+        if (
+            typeof LiveChatCore === "undefined"
+        ) {
+            console.error(
+                "LiveChatCore is not loaded."
+            );
+
+            return;
+        }
+
+        const socket =
+            LiveChatCore.initSocket();
+
+        function openChatBox() {
+            if (supportChatBox) {
+                supportChatBox.style.display =
+                    "block";
+            }
+
+            if (enterChatBtn) {
+                enterChatBtn.style.display =
+                    "none";
+            }
+
+            try {
+                sessionStorage.setItem(
+                    chatStorageKey,
+                    "true"
+                );
+            } catch (error) {
+                console.error(
+                    "Could not save chat state:",
+                    error
+                );
+            }
+
+            window.setTimeout(
+                function () {
+                    if (liveComments) {
+                        LiveChatCore.scrollBottom(
+                            liveComments
+                        );
+                    }
+                },
+                100
+            );
+        }
+
+        function addChatBubble(
+            message,
+            side,
+            name,
+            type
+        ) {
+            if (!liveComments) {
+                return;
+            }
+
+            LiveChatCore.addChatBubble({
+                container: liveComments,
+                message: message,
+                side: side,
+                name: name || "",
+                type: type || "normal",
+                html: true
+            });
+        }
+
+        function isSameTicketEvent(data) {
+            if (
+                !data ||
+                data.ticket_id === undefined ||
+                data.ticket_id === null
+            ) {
+                return false;
+            }
+
+            return (
+                Number(data.ticket_id)
+                === Number(ticketId)
+            );
+        }
+
+        function isSystemMessage(message) {
+            const value =
+                String(message || "");
+
+            return (
+                value.startsWith("✅") ||
+                value.startsWith("🚨") ||
+                value.startsWith("🔒") ||
+                value.startsWith("🔓") ||
+                value.startsWith("🔄") ||
+                value.startsWith(
+                    "Ticket reopened"
+                ) ||
+                value.startsWith(
+                    "Ticket closed"
+                ) ||
+                value.startsWith(
+                    "Ticket escalated"
+                ) ||
+                value.startsWith(
+                    "Support agent"
+                ) ||
+                value.startsWith(
+                    "Customer wait-time reminder"
+                ) ||
+                value.startsWith(
+                    "Staff alert sent"
+                ) ||
+                value.startsWith(
+                    "Reminder sent to customer"
+                ) ||
+                value.startsWith(
+                    "<strong>Current AI / FAQ Conversation"
+                ) ||
+                value.startsWith(
+                    "<strong>Previous AI / FAQ Conversation"
+                )
+            );
+        }
+
+        function addAttachmentToTicketDetails(
+            data
+        ) {
+            if (!attachmentContainer) {
+                return;
+            }
+
+            const message =
+                String(data.message || "");
+
+            const isAttachment =
+                data.is_attachment === true ||
+                message.includes(
+                    "Attachment uploaded:"
+                );
+
+            if (!isAttachment) {
+                return;
+            }
+
+            if (
+                attachmentContainer
+                    .innerHTML
+                    .includes(message)
+            ) {
+                return;
+            }
+
+            const noAttachmentText =
+                document.getElementById(
+                    "noAttachmentText"
+                );
+
+            if (noAttachmentText) {
+                noAttachmentText.remove();
+            }
+
+            const wrapper =
+                document.createElement("div");
+
+            wrapper.className =
+                "mb-2 attachment-item";
+
+            wrapper.innerHTML = `
+                ${message}
+
+                <small class="text-muted d-block">
+                    Uploaded by ${
+                        data.sender_name ||
+                        "User"
+                    }
+                </small>
+            `;
+
+            attachmentContainer.appendChild(
+                wrapper
+            );
+        }
+
+        function reloadTicketSoon() {
+            window.setTimeout(
+                function () {
+                    window.location.reload();
+                },
+                800
+            );
+        }
+
+        if (enterChatBtn) {
+            enterChatBtn.addEventListener(
+                "click",
+                openChatBox
+            );
+        }
+
+        try {
+            if (
+                sessionStorage.getItem(
+                    chatStorageKey
+                ) === "true"
+            ) {
+                openChatBox();
+            }
+        } catch (error) {
+            console.error(
+                "Could not restore chat state:",
+                error
+            );
+        }
+
+        try {
+            const params =
+                new URLSearchParams(
+                    window.location.search
+                );
+
+            if (
+                params.get("chat") === "1"
+            ) {
+                openChatBox();
+            }
+        } catch (error) {
+            console.error(
+                "Unable to read chat URL parameters:",
+                error
+            );
+        }
+
+        socket.on(
+            "connect",
+            function () {
+                console.log(
+                    "SOCKET CONNECTED (AGENT):",
+                    socket.id
+                );
+
+                socket.emit(
+                    "join_ticket_room",
+                    {
+                        ticket_id: ticketId
+                    }
+                );
+            }
+        );
+
+        socket.on(
+            "ticket_room_joined",
+            function (data) {
+                console.log(
+                    "TICKET ROOM RESULT (AGENT):",
+                    data
+                );
+            }
+        );
+
+        socket.on(
+            "connect_error",
+            function (error) {
+                console.error(
+                    "SOCKET CONNECTION ERROR (AGENT):",
+                    error
+                );
+            }
+        );
+
+        socket.on(
+            "new_comment",
+            function (data) {
+                if (
+                    !data ||
+                    !data.message ||
+                    !isSameTicketEvent(data)
+                ) {
+                    return;
+                }
+
+                const senderRole =
+                    String(
+                        data.sender_role || ""
+                    ).trim();
+
+                const senderName =
+                    String(
+                        data.sender_name || ""
+                    ).trim();
+
+                const message =
+                    String(
+                        data.message || ""
+                    );
+
+                addAttachmentToTicketDetails(
+                    data
+                );
+
+                const isOwnMessage =
+                    senderRole.toLowerCase()
+                    === String(
+                        currentUserRole
+                    ).toLowerCase()
+                    &&
+                    senderName.toLowerCase()
+                    === String(
+                        currentUserName
+                    ).toLowerCase();
+
+                if (isOwnMessage) {
+                    return;
+                }
+
+                openChatBox();
+
+                if (isSystemMessage(message)) {
+                    addChatBubble(
+                        message,
+                        "left",
+                        "System",
+                        "system"
+                    );
+
+                } else if (
+                    senderRole.toLowerCase()
+                    === "customer"
+                ) {
+                    addChatBubble(
+                        message,
+                        "left",
+                        senderName || "Customer",
+                        "normal"
+                    );
+
+                } else {
+                    addChatBubble(
+                        message,
+                        "right",
+                        senderName || "Support",
+                        "normal"
+                    );
+                }
+
+                LiveChatCore.scrollBottom(
+                    liveComments
+                );
+            }
+        );
+
+        socket.on(
+            "agent_joined",
+            function (data) {
+                if (
+                    !data ||
+                    !data.message ||
+                    !isSameTicketEvent(data)
+                ) {
+                    return;
+                }
+
+                openChatBox();
+
+                addChatBubble(
+                    data.message,
+                    "left",
+                    "System",
+                    "system"
+                );
+            }
+        );
+
+        socket.on(
+            "ticket_closed",
+            function (data) {
+                if (
+                    !data ||
+                    !data.message ||
+                    !isSameTicketEvent(data)
+                ) {
+                    return;
+                }
+
+                openChatBox();
+
+                addChatBubble(
+                    data.message,
+                    "left",
+                    "System",
+                    "system"
+                );
+
+                reloadTicketSoon();
+            }
+        );
+
+        socket.on(
+            "ticket_reopened",
+            function (data) {
+                if (
+                    !data ||
+                    !data.message ||
+                    !isSameTicketEvent(data)
+                ) {
+                    return;
+                }
+
+                openChatBox();
+
+                addChatBubble(
+                    data.message,
+                    "left",
+                    "System",
+                    "system"
+                );
+
+                reloadTicketSoon();
+            }
+        );
+
+        socket.on(
+            "ticket_escalated",
+            function (data) {
+                if (
+                    !data ||
+                    !data.message ||
+                    !isSameTicketEvent(data)
+                ) {
+                    return;
+                }
+
+                openChatBox();
+
+                addChatBubble(
+                    data.message,
+                    "left",
+                    "System",
+                    "system"
+                );
+
+                reloadTicketSoon();
+            }
+        );
+
+        if (chatForm) {
+            chatForm.addEventListener(
+                "submit",
+                async function (event) {
+                    event.preventDefault();
+
+                    const message =
+                        String(
+                            commentInput
+                                ? commentInput.value
+                                : ""
+                        ).trim();
+
+                    if (!message) {
+                        return;
+                    }
+
+                    if (sendChatBtn) {
+                        sendChatBtn.disabled =
+                            true;
+
+                        sendChatBtn.innerText =
+                            "Sending...";
+                    }
+
+                    try {
+                        const response =
+                            await fetch(
+                                chatForm.action,
+                                {
+                                    method: "POST",
+                                    body:
+                                        new FormData(
+                                            chatForm
+                                        ),
+                                    headers: {
+                                        "X-Requested-With":
+                                            "XMLHttpRequest"
+                                    }
+                                }
+                            );
+
+                        const result =
+                            await response.json();
+
+                        if (
+                            !response.ok ||
+                            result.success !== true
+                        ) {
+                            throw new Error(
+                                result.message ||
+                                "Message could not be sent."
+                            );
+                        }
+
+                        addChatBubble(
+                            message,
+                            "right",
+                            "You",
+                            "normal"
+                        );
+
+                        if (commentInput) {
+                            commentInput.value =
+                                "";
+                        }
+
+                        LiveChatCore.scrollBottom(
+                            liveComments
+                        );
+
+                    } catch (error) {
+                        console.error(
+                            "Chat send error:",
+                            error
+                        );
+
+                        alert(
+                            error.message ||
+                            "Message could not be sent."
+                        );
+
+                    } finally {
+                        if (sendChatBtn) {
+                            sendChatBtn.disabled =
+                                false;
+
+                            sendChatBtn.innerText =
+                                "Send";
+                        }
+
+                        if (commentInput) {
+                            commentInput.focus();
+                        }
+                    }
+                }
+            );
+        }
+
+        if (
+            commentInput &&
+            chatForm
+        ) {
+            commentInput.addEventListener(
+                "keydown",
+                function (event) {
+                    if (
+                        event.key === "Enter" &&
+                        !event.shiftKey
+                    ) {
+                        event.preventDefault();
+                        chatForm.requestSubmit();
+                    }
+                }
+            );
+        }
+    }
+);
+</script>
+
+{% endblock %}

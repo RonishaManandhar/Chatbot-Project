@@ -1,0 +1,186 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+</head>
+
+<body style="
+    margin:0;
+    padding:30px;
+    background:#f5f7fa;
+    font-family:Arial, Helvetica, sans-serif;
+    color:#1f2937;
+">
+
+    <div style="
+    max-width:650px;
+    margin:0 auto;
+    background:#ffffff;
+    border-radius:12px;
+    padding:35px;
+    box-shadow:0 4px 18px rgba(0,0,0,0.06);
+">
+
+        <h2 style="
+        margin-top:0;
+        color:#2563eb;
+    ">
+            Customer Satisfaction Survey
+        </h2>
+
+        <p>
+            Hello {{ user.name }},
+        </p>
+
+        <p>
+            Your support ticket has been completed.
+            We would appreciate your feedback.
+        </p>
+
+        <div style="
+        background:#f8fafc;
+        border:1px solid #e5e7eb;
+        border-radius:10px;
+        padding:18px;
+        margin:22px 0;
+    ">
+
+            <p style="margin:0 0 8px 0;">
+                <strong>Ticket Number:</strong>
+                {{ ticket.number }}
+            </p>
+
+            <p style="margin:0;">
+                <strong>Subject:</strong>
+                {{ ticket.subject }}
+            </p>
+
+        </div>
+
+        <p>
+            Please select a rating below:
+        </p>
+
+        <div style="
+        text-align:center;
+        margin:25px 0;
+    ">
+
+            <a href="{{ url_for(
+            'customer.view_ticket',
+            id=ticket.id,
+            rating=1,
+            _external=True
+        ) }}"
+               style="
+               display:inline-block;
+               margin:4px;
+               padding:12px 16px;
+               border-radius:8px;
+               background:#fee2e2;
+               color:#991b1b;
+               text-decoration:none;
+               font-weight:bold;
+           ">
+                1
+            </a>
+
+            <a href="{{ url_for(
+            'customer.view_ticket',
+            id=ticket.id,
+            rating=2,
+            _external=True
+        ) }}"
+               style="
+               display:inline-block;
+               margin:4px;
+               padding:12px 16px;
+               border-radius:8px;
+               background:#ffedd5;
+               color:#9a3412;
+               text-decoration:none;
+               font-weight:bold;
+           ">
+                2
+            </a>
+
+            <a href="{{ url_for(
+            'customer.view_ticket',
+            id=ticket.id,
+            rating=3,
+            _external=True
+        ) }}"
+               style="
+               display:inline-block;
+               margin:4px;
+               padding:12px 16px;
+               border-radius:8px;
+               background:#fef3c7;
+               color:#92400e;
+               text-decoration:none;
+               font-weight:bold;
+           ">
+                3
+            </a>
+
+            <a href="{{ url_for(
+            'customer.view_ticket',
+            id=ticket.id,
+            rating=4,
+            _external=True
+        ) }}"
+               style="
+               display:inline-block;
+               margin:4px;
+               padding:12px 16px;
+               border-radius:8px;
+               background:#dcfce7;
+               color:#166534;
+               text-decoration:none;
+               font-weight:bold;
+           ">
+                4
+            </a>
+
+            <a href="{{ url_for(
+            'customer.view_ticket',
+            id=ticket.id,
+            rating=5,
+            _external=True
+        ) }}"
+               style="
+               display:inline-block;
+               margin:4px;
+               padding:12px 16px;
+               border-radius:8px;
+               background:#bbf7d0;
+               color:#14532d;
+               text-decoration:none;
+               font-weight:bold;
+           ">
+                5
+            </a>
+
+        </div>
+
+        <p style="
+        text-align:center;
+        color:#6b7280;
+        font-size:13px;
+    ">
+            Clicking a rating opens your ticket page, where you can confirm
+            or update the rating and add optional feedback.
+        </p>
+
+        <p>
+            Your feedback helps us improve our support service.
+        </p>
+
+        <p style="margin-bottom:0;">
+            Support Team
+        </p>
+
+    </div>
+
+</body>
+</html>

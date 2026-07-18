@@ -1,0 +1,25 @@
+Hello {{ user.name }},
+
+Your support ticket has been deleted from the support system.
+
+Ticket Number:
+{{ ticket_number }}
+
+Subject:
+{{ ticket_subject }}
+
+{% if deleted_by %}
+Deleted By:
+{{ deleted_by }}
+{% endif %}
+
+This ticket can no longer be viewed or reopened.
+
+If you still need assistance, create a new support request here:
+
+{{ url_for(
+    'customer.chat',
+    _external=True
+) }}
+
+Support Team

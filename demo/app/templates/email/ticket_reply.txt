@@ -1,0 +1,21 @@
+Hello {{ user.name }}
+
+A new reply has been added to your support ticket.
+
+Ticket:
+{{ ticket.number }}
+
+Subject:
+{{ ticket.subject }}
+
+Message:
+
+{{ message }}
+
+Open Ticket:
+
+{{ url_for(
+'customer.view_ticket',
+id=ticket.id,
+_external=True
+) }}

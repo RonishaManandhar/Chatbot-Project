@@ -1,0 +1,308 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block style %}
+{{ super() }}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-table/bootstrap-table.min.css') }}">
+
+<style>
+    /* Page-specific styles remain inside this template. */
+    .queue-summary {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin: 0 0 18px;
+    }
+
+    .queue-chip {
+        display: inline-flex;
+        align-items: center;
+        min-height: 34px;
+        padding: 7px 12px;
+        border: 1px solid #dbe3ee;
+        border-radius: 999px;
+        background: #f8fafc;
+        color: #334155;
+        font-size: 13px;
+        font-weight: 600;
+    }
+
+    .ticket-table-wrap {
+        width: 100%;
+        overflow-x: auto;
+    }
+
+    #ticketTable {
+        width: 100%;
+        min-width: 980px;
+    }
+
+    .status-pill {
+        display: inline-block;
+        padding: 5px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+    }
+
+    .status-open {
+        background: #dbeafe;
+        color: #1d4ed8;
+    }
+
+    .status-pending {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .status-solved {
+        background: #dcfce7;
+        color: #166534;
+    }
+
+    .status-closed {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .status-other {
+        background: #e5e7eb;
+        color: #111827;
+    }
+
+    .priority-low {
+        background: #e5e7eb;
+        color: #374151;
+    }
+
+    .priority-medium {
+        background: #dbeafe;
+        color: #1d4ed8;
+    }
+
+    .priority-high {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .priority-urgent {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .empty-queue {
+        text-align: center;
+        padding: 36px;
+        border: 1px dashed #d1d5db;
+        border-radius: 16px;
+        background: #f9fafb;
+        color: #6b7280;
+    }
+
+    .table-note {
+        font-size: 13px;
+        color: #6b7280;
+        margin-bottom: 14px;
+    }
+</style>
+{% endblock %}
+
+{% block header %}
+    {% block title %}Waiting Support Queue{% endblock %}
+{% endblock %}
+
+{% block text %}
+    These are unassigned customer tickets. Claim a ticket to move it into your assigned work queue. This page refreshes automatically when new tickets arrive or ticket status changes.
+{% endblock %}
+
+{% block content %}
+
+<div class="max-w-1000">
+    {% include 'includes/alert.html' %}
+</div>
+
+<div class="content-box mb-3 content-lighten max-w-1000">
+
+    <div class="queue-summary" aria-label="Queue summary">
+        <span class="queue-chip">Waiting tickets: {{ tickets|length }}</span>
+        <span class="queue-chip">Live updates: On</span>
+        <span class="queue-chip">Agent action: Claim ticket</span>
+    </div>
+
+    <p class="table-note">
+        Use the search box and filters to find urgent, high priority, or specific customer tickets quickly.
+    </p>
+
+    {% if tickets %}
+
+    <div class="ticket-table-wrap">
+
+    <table id="ticketTable"
+           class="table table-striped"
+           data-toggle="table"
+           data-search="true"
+           data-pagination="true"
+           data-page-list="[10, 25, 50, 75]"
+           data-show-columns="true"
+           data-show-toggle="true"
+           data-search-highlight="true"
+           data-filter-control="true"
+           data-buttons-class="dark">
+
+        <thead>
+            <tr>
+                <th data-field="number" data-valign="middle" data-halign="center">
+                    Ticket #
+                </th>
+
+                <th data-field="subject" data-valign="middle">
+                    Subject
+                </th>
+
+                <th data-field="customer" data-valign="middle" data-width="150">
+                    Customer
+                </th>
+
+                <th data-field="priority" data-filter-control="select">
+                    Priority
+                </th>
+
+                <th data-field="status" data-filter-control="select">
+                    Status
+                </th>
+
+                <th data-field="created" data-valign="middle">
+                    Created
+                </th>
+
+                <th data-field="action" data-card-visible="false">
+                    Action
+                </th>
+            </tr>
+        </thead>
+
+        <tbody>
+            {% for row in tickets %}
+            <tr id="tr-id-{{ row.id }}">
+
+                <td>
+                    <a href="{{ url_for('agent.view_ticket', id=row.id) }}">
+                        #{{ row.number }}
+                    </a>
+                </td>
+
+                <td>
+                    {% if row.subject|length > 64 %}
+                    {{ row.subject[:61] + '...' }}
+                    {% else %}
+                    {{ row.subject }}
+                    {% endif %}
+                </td>
+
+                <td>
+                    {{ row.author.name }}
+                </td>
+
+                <td>
+                    {% if row.priority %}
+                    {% if row.priority.priority == 'Urgent' %}
+                    <span class="status-pill priority-urgent">Urgent</span>
+                    {% elif row.priority.priority == 'High' %}
+                    <span class="status-pill priority-high">High</span>
+                    {% elif row.priority.priority == 'Medium' %}
+                    <span class="status-pill priority-medium">Medium</span>
+                    {% else %}
+                    <span class="status-pill priority-low">{{ row.priority.priority }}</span>
+                    {% endif %}
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+
+                <td>
+                    {% if row.status %}
+                    {% if row.status.status == 'Open' %}
+                    <span class="status-pill status-open">Open</span>
+                    {% elif row.status.status == 'Pending' %}
+                    <span class="status-pill status-pending">Pending</span>
+                    {% elif row.status.status == 'Solved' %}
+                    <span class="status-pill status-solved">Solved</span>
+                    {% elif row.status.status == 'Closed' %}
+                    <span class="status-pill status-closed">Closed</span>
+                    {% else %}
+                    <span class="status-pill status-other">{{ row.status.status }}</span>
+                    {% endif %}
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+
+                <td>
+                    {% if row.created_at %}
+                    {{ row.created_at.strftime('%d %b %Y, %H:%M') }}
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+
+                <td>
+                    {% if row.owner_id is none and row.status and row.status.status != 'Closed' %}
+                    <form action="{{ url_for('agent.claim_ticket', id=row.id) }}"
+                          method="POST"
+                          style="display:inline;">
+
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                        <button type="submit" class="btn btn-success btn-sm">
+                            Claim
+                        </button>
+                    </form>
+
+                    <a href="{{ url_for('agent.view_ticket', id=row.id) }}"
+                       class="btn btn-outline-primary btn-sm">
+                        Preview
+                    </a>
+                    {% else %}
+                    <span class="badge badge-secondary">
+                        Already assigned
+                    </span>
+                    {% endif %}
+                </td>
+
+            </tr>
+            {% endfor %}
+        </tbody>
+
+    </table>
+
+    </div>
+
+    {% else %}
+
+    <div class="empty-queue">
+        <h6>No new tickets waiting right now</h6>
+        <p class="mb-0">
+            When a customer creates or escalates a support ticket, it will appear here automatically.
+        </p>
+    </div>
+
+    {% endif %}
+
+</div>
+
+{% endblock %}
+
+{% block script %}
+{{ super() }}
+
+<script src="{{ url_for('static', filename='vendor/bootstrap-table/bootstrap-table.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/bootstrap-table/extensions/filter-control/bootstrap-table-filter-control.min.js') }}"></script>
+
+<script>
+    $(document).ready(function () {
+        if ($('#ticketTable').length) {
+            $('#ticketTable').bootstrapTable();
+        }
+    });
+</script>
+
+{% endblock %}

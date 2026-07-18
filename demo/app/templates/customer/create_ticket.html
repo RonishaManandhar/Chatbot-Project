@@ -1,0 +1,127 @@
+﻿{% from 'macros/render_input.html' import render_input %}
+{% from 'macros/render_select.html' import render_select %}
+{% from 'macros/render_upload.html' import render_upload %}
+
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+{% block title %}New Support Ticket{% endblock %}
+{% endblock %}
+
+{% block text %}
+Create a support ticket manually without completing the AI triage process.
+{% endblock %}
+
+{% block button %}
+<a href="{{ url_for('customer.my_tickets') }}"
+   class="btn btn-outline-secondary btn-sm">
+    Back to My Chats
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="content-box mb-3 content-lighten max-w-1000">
+    {% include 'includes/alert.html' %}
+
+    <form action="{{ url_for('customer.create_ticket') }}"
+          method="POST"
+          enctype="multipart/form-data"
+          novalidate>
+
+        {{ form.csrf_token }}
+
+        <div class="form-group">
+            <label for="subject">Subject</label>
+            {{
+ render_input(
+                form.subject,
+                "Briefly describe the issue",
+                "Subject is required"
+            )
+            }}
+            <small class="form-text text-muted">
+                Use a clear title such as “Cannot connect to office Wi-Fi”.
+            </small>
+        </div>
+
+        <div class="form-group">
+            <label for="category">Category</label>
+            {{
+ render_select(
+                form.category,
+                "Category is required"
+            )
+            }}
+        </div>
+
+        <div class="form-group">
+            <label for="body">Issue description</label>
+            {{
+ render_input(
+                form.body,
+                "Describe the problem, any error message, and what you have already tried...",
+                "Issue description is required",
+                rows="7"
+            )
+            }}
+        </div>
+
+        <div class="form-group">
+            <label for="attachment">Attachment <span class="text-muted">(optional)</span></label>
+
+            <div class="custom-file">
+                {{ render_upload(form.attachment) }}
+                <label class="custom-file-label" for="attachment">
+                    Choose a PDF, DOCX, PNG, JPG, JPEG, or GIF file
+                </label>
+            </div>
+
+            <small class="form-text text-muted">
+                Maximum file size: 4 MB.
+            </small>
+        </div>
+
+        <div class="d-flex flex-wrap align-items-center" style="gap: 10px;">
+            <button type="submit" class="btn btn-primary">
+                Create Support Ticket
+            </button>
+
+            <a href="{{ url_for('customer.my_tickets') }}"
+               class="btn btn-light">
+                Cancel
+            </a>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block script %}
+{{ super() }}
+<script>
+    (function () {
+        const input = document.getElementById('attachment');
+        if (!input) return;
+
+        const maxFileSize = 4 * 1024 * 1024;
+
+        input.addEventListener('change', function () {
+            const file = this.files && this.files[0];
+            const label = this.nextElementSibling;
+
+            this.setCustomValidity('');
+
+            if (!file) {
+                if (label) label.textContent = 'Choose a PDF, DOCX, PNG, JPG, JPEG, or GIF file';
+                return;
+            }
+
+            if (label) label.textContent = file.name;
+
+            if (file.size > maxFileSize) {
+                this.setCustomValidity('Maximum file size is 4 MB.');
+                this.reportValidity();
+            }
+        });
+    })();
+</script>
+{% endblock %}

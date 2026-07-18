@@ -1,0 +1,271 @@
+﻿{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}Customer Satisfaction{% endblock %}
+{% endblock %}
+
+{% block text %}
+Review customer ratings, feedback, support quality, and agent satisfaction performance.
+{% endblock %}
+
+{% block content %}
+
+<div class="max-w-1000">
+    {% include 'includes/alert.html' %}
+</div>
+
+<style>
+    .satisfaction-card {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 16px;
+        padding: 22px;
+        height: 100%;
+        box-shadow: 0 5px 14px rgba(0,0,0,0.04);
+        text-align: center;
+    }
+
+        .satisfaction-card h2 {
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .satisfaction-card small {
+            color: #6b7280;
+        }
+
+    .feedback-item {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        padding: 16px;
+        margin-bottom: 12px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+    }
+
+    .rating-stars {
+        color: #f59e0b;
+        font-size: 18px;
+        letter-spacing: 1px;
+    }
+
+    .agent-row {
+        border-bottom: 1px solid #e5e7eb;
+        padding: 14px 0;
+    }
+
+        .agent-row:last-child {
+            border-bottom: 0;
+        }
+</style>
+
+<div class="content-box content-lighten">
+
+    <h4 class="mb-4">
+        Customer Satisfaction Dashboard
+    </h4>
+
+    <div class="row">
+
+        <div class="col-md-3 mb-3">
+            <div class="satisfaction-card">
+                <h2>{{ average_rating }}</h2>
+                <small>Average Rating / 5</small>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-3">
+            <div class="satisfaction-card">
+                <h2>{{ total_reviews }}</h2>
+                <small>Total Reviews</small>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-3">
+            <div class="satisfaction-card">
+                <h2>{{ satisfaction_percent }}%</h2>
+                <small>Satisfied Customers</small>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-3">
+            <div class="satisfaction-card">
+                <h2>{{ unsatisfied_percent }}%</h2>
+                <small>Unsatisfied Customers</small>
+            </div>
+        </div>
+
+    </div>
+
+</div>
+
+<div class="row mt-4">
+
+    <div class="col-md-6 mb-4">
+
+        <div class="content-box content-lighten h-100">
+
+            <h5 class="mb-3">
+                Top Rated Agents
+            </h5>
+
+            {% if top_rated_agents %}
+
+            {% for agent, avg_rating, review_count in top_rated_agents %}
+
+            <div class="agent-row d-flex justify-content-between align-items-center">
+
+                <div>
+                    <strong>{{ agent.name }}</strong>
+
+                    <br>
+
+                    <small class="text-muted">
+                        {{ review_count }} customer reviews
+                    </small>
+                </div>
+
+                <div class="text-right">
+
+                    <span class="badge badge-success">
+                        {{ avg_rating|round(1) }} / 5
+                    </span>
+
+                </div>
+
+            </div>
+
+            {% endfor %}
+
+            {% else %}
+
+            <div class="alert alert-info mb-0">
+                No agent ratings available yet.
+            </div>
+
+            {% endif %}
+
+        </div>
+
+    </div>
+
+    <div class="col-md-6 mb-4">
+
+        <div class="content-box content-lighten h-100">
+
+            <h5 class="mb-3">
+                Satisfaction Summary
+            </h5>
+
+            <p class="text-muted">
+                Ratings of 4 and 5 are counted as satisfied customers.
+                Ratings of 1 and 2 are counted as unsatisfied customers.
+            </p>
+
+            <div class="mb-3">
+                <strong>Satisfied Reviews:</strong>
+                <span class="badge badge-success">
+                    {{ satisfied_reviews }}
+                </span>
+            </div>
+
+            <div class="mb-3">
+                <strong>Unsatisfied Reviews:</strong>
+                <span class="badge badge-danger">
+                    {{ unsatisfied_reviews }}
+                </span>
+            </div>
+
+            <div class="mb-3">
+                <strong>Total Reviews:</strong>
+                <span class="badge badge-primary">
+                    {{ total_reviews }}
+                </span>
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+<div class="content-box content-lighten mt-4">
+
+    <h5 class="mb-3">
+        Recent Customer Feedback
+    </h5>
+
+    {% if recent_reviews %}
+
+    {% for review in recent_reviews %}
+
+    <div class="feedback-item">
+
+        <div class="d-flex justify-content-between flex-wrap">
+
+            <div>
+                <strong>
+                    {{ review.customer.name if review.customer else "Unknown Customer" }}
+                </strong>
+
+                <br>
+
+                <small class="text-muted">
+                    Ticket
+                    {% if review.ticket %}
+                    <a href="{{ url_for('admin.view_ticket', id=review.ticket.id) }}">
+                        #{{ review.ticket.number }}
+                    </a>
+                    {% else %}
+                    -
+                    {% endif %}
+                    |
+                    {{ review.created_at.strftime('%d %b %Y, %H:%M') if review.created_at else '-' }}
+                </small>
+            </div>
+
+            <div class="text-right">
+
+                <div class="rating-stars">
+                    {% for i in range(review.rating) %}
+                    ★
+                    {% endfor %}
+                </div>
+
+                <small class="text-muted">
+                    {{ review.rating }} / 5
+                </small>
+
+            </div>
+
+        </div>
+
+        {% if review.feedback %}
+
+        <p class="text-muted mt-3 mb-0">
+            {{ review.feedback }}
+        </p>
+
+        {% else %}
+
+        <p class="text-muted mt-3 mb-0">
+            No written feedback provided.
+        </p>
+
+        {% endif %}
+
+    </div>
+
+    {% endfor %}
+
+    {% else %}
+
+    <div class="alert alert-info mb-0">
+        No customer feedback has been submitted yet.
+    </div>
+
+    {% endif %}
+
+</div>
+
+{% endblock %}

@@ -1,0 +1,24 @@
+Hello {{ user.name }},
+
+Your support ticket has been reopened successfully.
+
+Ticket Number:
+{{ ticket.number }}
+
+Subject:
+{{ ticket.subject }}
+
+Status:
+{{ ticket.status.status if ticket.status else "Pending" }}
+
+Our support team will continue investigating your issue.
+
+View your ticket here:
+
+{{ url_for(
+    'customer.view_ticket',
+    id=ticket.id,
+    _external=True
+) }}
+
+Support Team

@@ -1,0 +1,199 @@
+{% extends "layouts/dashboard.base.html" %}
+
+{% block title %}
+Maintenance Mode
+{% endblock %}
+
+{% block content %}
+
+<div class="container-fluid">
+
+    <div class="page-header">
+        <h3>System Maintenance</h3>
+        <p class="text-muted">
+            Schedule and manage chatbot maintenance windows
+        </p>
+    </div>
+
+    <div class="row">
+
+        <!-- LEFT SIDE -->
+        <div class="col-md-8">
+
+            <div class="card">
+                <div class="card-body">
+
+                    {% if is_currently_active %}
+                    <div class="alert alert-warning">
+                        <strong>Maintenance Mode Active</strong><br>
+                        The chatbot is currently unavailable and displaying the maintenance message.
+                    </div>
+                    {% else %}
+                    <div class="alert alert-success">
+                        <strong>System Online</strong><br>
+                        No maintenance window is currently active.
+                    </div>
+                    {% endif %}
+
+                    <form method="POST">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                        <div class="form-group mb-3">
+                            <label>
+                                <input type="checkbox"
+                                       name="enabled"
+                                       {% if setting.enabled %}checked{% endif %}>
+                                Enable Maintenance Mode
+                            </label>
+                        </div>
+
+                        <div class="form-group mb-3">
+                            <label>Maintenance Title</label>
+
+                            <input type="text"
+                                   name="title"
+                                   class="form-control"
+                                   value="{{ setting.title or '' }}">
+                        </div>
+
+                        <div class="form-group mb-3">
+                            <label>Maintenance Type</label>
+
+                            <select class="form-control">
+                                <option>Planned Maintenance</option>
+                                <option>Database Optimisation</option>
+                                <option>System Upgrade</option>
+                                <option>AI Model Update</option>
+                                <option>Emergency Maintenance</option>
+                            </select>
+                        </div>
+
+                        <div class="row">
+
+                            <div class="col-md-6">
+                                <div class="form-group mb-3">
+
+                                    <label>Start Time</label>
+
+                                    <input type="datetime-local"
+                                           name="start_time"
+                                           class="form-control"
+                                           value="{% if setting.start_time %}{{ setting.start_time.strftime('%Y-%m-%dT%H:%M') }}{% endif %}">
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <div class="form-group mb-3">
+
+                                    <label>End Time</label>
+
+                                    <input type="datetime-local"
+                                           name="end_time"
+                                           class="form-control"
+                                           value="{% if setting.end_time %}{{ setting.end_time.strftime('%Y-%m-%dT%H:%M') }}{% endif %}">
+                                </div>
+                            </div>
+
+                        </div>
+
+                        <div class="form-group mb-3">
+
+                            <label>Maintenance Message</label>
+
+                            <textarea name="message"
+                                      rows="5"
+                                      class="form-control">{{ setting.message or '' }}</textarea>
+
+                        </div>
+
+                        <div class="form-group mb-4">
+
+                            <label>
+                                <input type="checkbox"
+                                       name="allow_ticket_creation"
+                                       {% if setting.allow_ticket_creation %}checked{% endif %}>
+                                Allow customers to create support tickets during maintenance
+                            </label>
+
+                        </div>
+
+                        <button type="submit"
+                                class="btn btn-primary">
+                            Save Maintenance Schedule
+                        </button>
+
+                    </form>
+
+                </div>
+            </div>
+
+        </div>
+
+        <!-- RIGHT SIDE -->
+        <div class="col-md-4">
+
+            <div class="card">
+                <div class="card-header">
+                    Current Status
+                </div>
+
+                <div class="card-body">
+
+                    {% if is_currently_active %}
+                    <span class="badge bg-danger">
+                        ACTIVE
+                    </span>
+                    {% else %}
+                    <span class="badge bg-success">
+                        ONLINE
+                    </span>
+                    {% endif %}
+
+                    <hr>
+
+                    <p>
+                        <strong>Title:</strong><br>
+                        {{ setting.title or 'Not configured' }}
+                    </p>
+
+                    <p>
+                        <strong>Start:</strong><br>
+                        {{ setting.start_time or 'Immediate' }}
+                    </p>
+
+                    <p>
+                        <strong>End:</strong><br>
+                        {{ setting.end_time or 'Not scheduled' }}
+                    </p>
+
+                </div>
+            </div>
+
+            <br>
+
+            <div class="card">
+                <div class="card-header">
+                    Maintenance Features
+                </div>
+
+                <div class="card-body">
+
+                    <ul>
+                        <li>Scheduled maintenance windows</li>
+                        <li>Customer maintenance message</li>
+                        <li>Optional ticket creation</li>
+                        <li>System event logging</li>
+                        <li>Admin audit trail</li>
+                        <li>Automatic activation by date/time</li>
+                    </ul>
+
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endblock %}

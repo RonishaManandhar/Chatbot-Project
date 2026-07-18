@@ -1,0 +1,164 @@
+{% from 'macros/render_input.html' import render_input %}
+{% from 'macros/render_select.html' import render_select %}
+{% from 'macros/render_upload.html' import render_upload %}
+
+{% extends 'layouts/dashboard.base.html' %}
+{% block style %}
+{{ super() }}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-table/bootstrap-table.min.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/froala-editor/css/froala_editor.pkgd.min.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/froala-editor/css/froala_style.min.css') }}">
+{% endblock %}
+
+{% block header %}
+    {% block title %}My Tickets{% endblock %}
+{% endblock %}
+{% block text %}
+    List of all the tickets you've created and are responsible for.
+{% endblock %}
+
+{% block button %}
+    <button type="button" class="btn btn-primary btn-sm" data-toggle="modal" data-target="#createModal">
+        Create New
+    </button>
+{% endblock %}
+{% block content %}
+
+<div class="max-w-1000">
+    {% include 'includes/alert.html' %}
+</div>
+
+<div class="content-box mb-3 content-lighten max-w-1000">
+    <table
+        id="ticketTable"
+        class="table table-striped table-responsive-sm"
+        
+        data-toggle="table"
+        data-search="true"
+        
+        data-pagination="true"
+        data-page-list="[10, 25, 50, 75]"
+        
+        data-show-columns="true"
+        data-show-toggle="true"
+        data-search-highlight="true"
+
+        data-filter-control="true"
+        data-buttons-class="dark"
+        >
+        <thead>
+            <tr class="tr-class-1">
+                <th data-field="number" rowspan="2" data-valign="middle" data-halign="center">ID</th>
+                <th colspan="4">Ticket information</th>
+            </tr>
+            <tr class="tr-class-2">
+                <th data-field="subject" data-valign="middle">Subject</th>
+                <th data-field="author" data-valign="middle" data-width="150">Author name</th>
+                <th data-field="priority" data-filter-control="select" data-card-visible="false">
+                    Priority
+                </th>
+                <th data-field="status" data-filter-control="select" data-card-visible="false">
+                    Status
+                </th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in tickets %}
+            <tr id="tr-id-{{ row.id }}" class="tr-class-{{ row.id }}" data-title="{{ row.number }}" data-object='{"key": "value"}'>
+                <td id="td-id-{{ row.id }}" class="td-class-{{ row.id }}" data-title="{{ row.number }}">
+                    <a href="{{ url_for('admin.view_ticket', id=row.id) }}">{{ row.number }}</a>
+                </td>
+                <td>
+                    {% if row.subject|length > 64 %}
+                        {{ row.subject[:64-3] + '...' }}
+                    {% else %}
+                        {{ row.subject }}
+                    {% endif %}
+                </td>
+                <td>{{ row.author.name }}</td>
+                <td>{{ row.priority.priority }}</td>
+                <td>{{ row.status.status }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="modal fade" id="createModal" tabindex="-1" aria-labelledby="createModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="createModalLabel">Create New</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form action="{{ url_for('admin.create_ticket') }}" method="POST" enctype="multipart/form-data">
+                    {{ form.csrf_token }}
+                    <div class="form-group">
+                        {{ render_input(form.subject, "Subject", "Subject is required") }}
+                    </div>
+                    <div class="form-group">
+                        {{ render_select(form.category, "Category is required") }}
+                    </div>
+                    <div class="form-group">
+                        {{ render_input(form.body, "Write a message...", "Message is required", rows="5") }}
+                    </div>
+                    <div class="mb-3">
+                        <small class="text-muted">Only files with the following extensions will be allowed (PDF, DOCX, JPEG, JPG, PNG, GIF) and a maximun file size of 4 MB.</small>
+                    </div>
+                    <div class="input-group mb-3">
+                        <div class="custom-file">
+                            {{ render_upload(form.attachment) }}
+                            <label class="custom-file-label" for="attachment">Choose file</label>
+                        </div>
+                        <div class="input-group-append">
+                            <span class="input-group-text" id="">Upload</span>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Submit</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+{% block script %}
+{{ super() }}
+<script src="{{ url_for('static', filename='vendor/bootstrap-table/bootstrap-table.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/bootstrap-table/extensions/filter-control/bootstrap-table-filter-control.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/froala-editor/js/froala_editor.pkgd.min.js') }}"></script>
+<script>
+    $(document).ready(function() {
+        new FroalaEditor('textarea#body', {
+            toolbarButtons: ['fontFamily', '|', 'bold', 'italic', 'underline', 'undo', 'redo', 'codeView'],
+            fontFamilySelection: true,
+            pluginsEnabled: ['fontFamily']
+        });
+
+        $('#attachment').on('change', function() {
+            var fileName = $(this).val();
+            $(this).next('.custom-file-label').html(fileName);
+        });
+
+        $('#ticketTable').bootstrapTable();
+
+        maxFileSize = 4 * 1024 * 1024
+        $('#attachment').change(function() {
+            // File size validation
+            fileSize = this.files[0].size;
+            if(fileSize > maxFileSize) {
+                this.setCustomValidity('Maximum file size exceeded');
+                this.reportValidity();
+            }
+            // File extension validation
+            var ext = $(this).val().split('.').pop().toLowerCase();
+            if($.inArray(ext, ['pdf', 'docx', 'png', 'jpg', 'jpeg', 'gif']) == -1) {
+                alert('This file extension is not allowed');
+            }
+        });
+    });
+</script>
+{% endblock %}

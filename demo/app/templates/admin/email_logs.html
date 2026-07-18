@@ -1,0 +1,1035 @@
+﻿{% extends "layouts/dashboard.base.html" %}
+
+{% block style %}
+{{ super() }}
+
+<style>
+    .email-stat-card {
+        height: 100%;
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        background: #ffffff;
+        padding: 18px;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
+    }
+
+    .email-stat-value {
+        margin: 0;
+        font-size: 28px;
+        font-weight: 700;
+        color: #111827;
+    }
+
+    .email-stat-label {
+        margin-top: 3px;
+        color: #6b7280;
+        font-size: 13px;
+    }
+
+    .email-filter-box {
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        background: #ffffff;
+        padding: 18px;
+        margin-bottom: 20px;
+    }
+
+    .email-table-box {
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        background: #ffffff;
+        overflow: hidden;
+    }
+
+    .email-table-wrapper {
+        width: 100%;
+        overflow-x: auto;
+    }
+
+    .email-table {
+        margin-bottom: 0;
+        min-width: 1050px;
+    }
+
+        .email-table th {
+            white-space: nowrap;
+            background: #f8fafc;
+            color: #374151;
+            border-top: 0;
+        }
+
+        .email-table td {
+            vertical-align: middle;
+        }
+
+    .email-subject {
+        max-width: 280px;
+        white-space: normal;
+        word-break: break-word;
+    }
+
+    .email-recipient {
+        max-width: 220px;
+        word-break: break-word;
+    }
+
+    .email-error-preview {
+        max-width: 260px;
+        color: #dc3545;
+        font-size: 12px;
+        word-break: break-word;
+    }
+
+    .email-actions {
+        white-space: nowrap;
+    }
+
+    .email-status-pending {
+        background: #fff3cd;
+        color: #856404;
+    }
+
+    .email-type-badge {
+        text-transform: none;
+        white-space: normal;
+    }
+
+    .filter-label {
+        font-weight: 600;
+        font-size: 13px;
+        color: #374151;
+    }
+
+    .pagination {
+        margin-bottom: 0;
+    }
+
+    .email-empty-state {
+        padding: 45px 20px;
+        text-align: center;
+        color: #6b7280;
+    }
+
+    .management-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .error-message-box {
+        max-height: 320px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+        border: 1px solid #fecaca;
+        background: #fef2f2;
+        color: #991b1b;
+        border-radius: 8px;
+        padding: 12px;
+    }
+
+    @media (max-width: 767px) {
+        .management-actions .btn {
+            width: 100%;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block header %}
+    {% block title %}
+        Email Logs
+    {% endblock %}
+{% endblock %}
+
+{% block text %}
+    Search, filter, review, and manage SMTP delivery records.
+{% endblock %}
+
+{% block content %}
+
+<div class="max-w-1000">
+    {% include "includes/alert.html" %}
+</div>
+
+<div class="max-w-1000">
+
+    <!-- =====================================================
+         STATISTICS
+         ===================================================== -->
+
+    <div class="row mb-4">
+
+        <div class="col-sm-6 col-xl-3 mb-3">
+            <div class="email-stat-card">
+                <p class="email-stat-value">
+                    {{ total }}
+                </p>
+
+                <div class="email-stat-label">
+                    Total Emails
+                </div>
+            </div>
+        </div>
+
+        <div class="col-sm-6 col-xl-3 mb-3">
+            <div class="email-stat-card">
+                <p class="email-stat-value text-success">
+                    {{ sent }}
+                </p>
+
+                <div class="email-stat-label">
+                    Successfully Sent
+                </div>
+            </div>
+        </div>
+
+        <div class="col-sm-6 col-xl-3 mb-3">
+            <div class="email-stat-card">
+                <p class="email-stat-value text-danger">
+                    {{ failed }}
+                </p>
+
+                <div class="email-stat-label">
+                    Failed
+                </div>
+            </div>
+        </div>
+
+        <div class="col-sm-6 col-xl-3 mb-3">
+            <div class="email-stat-card">
+                <p class="email-stat-value text-warning">
+                    {{ pending }}
+                </p>
+
+                <div class="email-stat-label">
+                    Pending
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- =====================================================
+         FILTERS
+         ===================================================== -->
+
+    <div class="email-filter-box">
+
+        <form action="{{ url_for('admin.email_logs') }}"
+              method="GET">
+
+            <div class="row">
+
+                <div class="col-lg-4 col-md-6 mb-3">
+                    <label for="search"
+                           class="filter-label">
+                        Search
+                    </label>
+
+                    <input type="text"
+                           name="search"
+                           id="search"
+                           class="form-control"
+                           value="{{ search }}"
+                           placeholder="Recipient, subject, type, or error">
+                </div>
+
+                <div class="col-lg-2 col-md-6 mb-3">
+                    <label for="status"
+                           class="filter-label">
+                        Status
+                    </label>
+
+                    <select name="status"
+                            id="status"
+                            class="form-control">
+                        <option value="">
+                            All statuses
+                        </option>
+
+                        <option value="Sent"
+                                {% if selected_status=="Sent" %}
+                                selected
+                                {% endif %}>
+                            Sent
+                        </option>
+
+                        <option value="Failed"
+                                {% if selected_status=="Failed" %}
+                                selected
+                                {% endif %}>
+                            Failed
+                        </option>
+
+                        <option value="Pending"
+                                {% if selected_status=="Pending" %}
+                                selected
+                                {% endif %}>
+                            Pending
+                        </option>
+                    </select>
+                </div>
+
+                <div class="col-lg-3 col-md-6 mb-3">
+                    <label for="email_type"
+                           class="filter-label">
+                        Email Type
+                    </label>
+
+                    <select name="email_type"
+                            id="email_type"
+                            class="form-control">
+                        <option value="">
+                            All email types
+                        </option>
+
+                        {% for email_type in email_types %}
+                        <option value="{{ email_type }}"
+                                {% if selected_type==email_type %}
+                                selected
+                                {% endif %}>
+                            {{ email_type }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-lg-3 col-md-6 mb-3">
+                    <label for="per_page"
+                           class="filter-label">
+                        Results Per Page
+                    </label>
+
+                    <select name="per_page"
+                            id="per_page"
+                            class="form-control">
+                        {% for size in [10, 20, 50, 100] %}
+                        <option value="{{ size }}"
+                                {% if per_page==size %}
+                                selected
+                                {% endif %}>
+                            {{ size }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-md-3 mb-3">
+                    <label for="date_from"
+                           class="filter-label">
+                        From Date
+                    </label>
+
+                    <input type="date"
+                           name="date_from"
+                           id="date_from"
+                           class="form-control"
+                           value="{{ date_from }}">
+                </div>
+
+                <div class="col-md-3 mb-3">
+                    <label for="date_to"
+                           class="filter-label">
+                        To Date
+                    </label>
+
+                    <input type="date"
+                           name="date_to"
+                           id="date_to"
+                           class="form-control"
+                           value="{{ date_to }}">
+                </div>
+
+                <div class="col-md-6 mb-3 d-flex align-items-end">
+
+                    <button type="submit"
+                            class="btn btn-primary mr-2">
+                        <i class="fa fa-search mr-1"></i>
+                        Apply Filters
+                    </button>
+
+                    <a href="{{ url_for('admin.email_logs') }}"
+                       class="btn btn-secondary">
+                        Clear
+                    </a>
+
+                </div>
+
+            </div>
+
+        </form>
+
+        <hr>
+
+        <div class="management-actions">
+
+            <a href="{{ url_for('admin.test_email') }}"
+               class="btn btn-outline-primary">
+                <i class="fa fa-paper-plane mr-1"></i>
+                Send SMTP Test
+            </a>
+
+            <button type="button"
+                    class="btn btn-outline-danger"
+                    data-toggle="modal"
+                    data-target="#deleteFailedModal"
+                    {% if failed==0 %}
+                    disabled
+                    {% endif %}>
+                <i class="fa fa-trash mr-1"></i>
+                Delete Failed Logs
+            </button>
+
+            <button type="button"
+                    class="btn btn-danger"
+                    data-toggle="modal"
+                    data-target="#deleteAllModal"
+                    {% if total==0 %}
+                    disabled
+                    {% endif %}>
+                <i class="fa fa-trash mr-1"></i>
+                Clear All Logs
+            </button>
+
+        </div>
+
+    </div>
+
+    <!-- =====================================================
+         LOG TABLE
+         ===================================================== -->
+
+    <div class="email-table-box">
+
+        {% if logs %}
+
+        <div class="email-table-wrapper">
+
+            <table class="table table-hover email-table">
+
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Recipient</th>
+                        <th>Subject</th>
+                        <th>Type</th>
+                        <th>Status</th>
+                        <th>Related Record</th>
+                        <th>Created</th>
+                        <th>Sent</th>
+                        <th>Error</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+
+                    {% for log in logs %}
+
+                    <tr>
+
+                        <td>
+                            #{{ log.id }}
+                        </td>
+
+                        <td class="email-recipient">
+                            <a href="mailto:{{ log.recipient }}">
+                                {{ log.recipient }}
+                            </a>
+
+                            {% if log.user %}
+                            <small class="text-muted d-block">
+                                {{ log.user.name }}
+                            </small>
+                            {% endif %}
+                        </td>
+
+                        <td class="email-subject">
+                            {{ log.subject }}
+                        </td>
+
+                        <td>
+                            <span class="badge badge-info email-type-badge">
+                                {{ log.email_type }}
+                            </span>
+                        </td>
+
+                        <td>
+                            {% if log.status == "Sent" %}
+
+                            <span class="badge badge-success">
+                                Sent
+                            </span>
+
+                            {% elif log.status == "Failed" %}
+
+                            <span class="badge badge-danger">
+                                Failed
+                            </span>
+
+                            {% else %}
+
+                            <span class="badge email-status-pending">
+                                Pending
+                            </span>
+
+                            {% endif %}
+                        </td>
+
+                        <td>
+                            {% if log.ticket_id %}
+
+                            <a href="{{ url_for(
+                                                'admin.view_ticket',
+                                                id=log.ticket_id
+                                            ) }}"
+                               class="btn btn-outline-primary btn-sm">
+                                Ticket #{{ log.ticket.number if log.ticket else log.ticket_id }}
+                            </a>
+
+                            {% elif log.user %}
+
+                            <span class="text-muted">
+                                User #{{ log.user_id }}
+                            </span>
+
+                            {% else %}
+
+                            <span class="text-muted">
+                                —
+                            </span>
+
+                            {% endif %}
+                        </td>
+
+                        <td>
+                            {% if log.created_at %}
+                            {{ log.created_at.strftime("%d %b %Y") }}
+
+                            <small class="text-muted d-block">
+                                {{ log.created_at.strftime("%H:%M:%S") }}
+                            </small>
+                            {% else %}
+                            —
+                            {% endif %}
+                        </td>
+
+                        <td>
+                            {% if log.sent_at %}
+                            {{ log.sent_at.strftime("%d %b %Y") }}
+
+                            <small class="text-muted d-block">
+                                {{ log.sent_at.strftime("%H:%M:%S") }}
+                            </small>
+                            {% else %}
+                            —
+                            {% endif %}
+                        </td>
+
+                        <td class="email-error-preview">
+
+                            {% if log.error_message %}
+
+                            {{
+                                            log.error_message[:80]
+                            }}
+
+                            {% if log.error_message|length > 80 %}
+                            …
+                            {% endif %}
+
+                            {% else %}
+
+                            <span class="text-muted">
+                                —
+                            </span>
+
+                            {% endif %}
+
+                        </td>
+
+                        <td class="email-actions">
+
+                            {% if log.error_message %}
+
+                            <button type="button"
+                                    class="btn btn-outline-danger btn-sm"
+                                    data-toggle="modal"
+                                    data-target="#errorModal{{ log.id }}">
+                                Details
+                            </button>
+
+                            {% endif %}
+
+                            <button type="button"
+                                    class="btn btn-danger btn-sm"
+                                    data-toggle="modal"
+                                    data-target="#deleteLogModal{{ log.id }}">
+                                Delete
+                            </button>
+
+                        </td>
+
+                    </tr>
+
+                    {% endfor %}
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+        {% else %}
+
+        <div class="email-empty-state">
+
+            <i class="fa fa-envelope fa-2x mb-3"></i>
+
+            <h6>
+                No email logs found
+            </h6>
+
+            <p class="mb-0">
+                No records match the current filters.
+            </p>
+
+        </div>
+
+        {% endif %}
+
+    </div>
+
+    <!-- =====================================================
+         PAGINATION
+         ===================================================== -->
+    {% if pagination.pages > 1 %}
+
+    <nav class="mt-4"
+         aria-label="Email log pages">
+
+        <ul class="pagination justify-content-center">
+
+            <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+
+                <a class="page-link"
+                   href="{{
+                            url_for(
+                                'admin.email_logs',
+                                page=pagination.prev_num,
+                                search=search,
+                                status=selected_status,
+                                email_type=selected_type,
+                                date_from=date_from,
+                                date_to=date_to,
+                                per_page=per_page
+                            )
+                            if pagination.has_prev
+                            else '#'
+                        }}">
+                    Previous
+                </a>
+
+            </li>
+
+            {% for page_number in pagination.iter_pages(
+            left_edge=1,
+            right_edge=1,
+            left_current=2,
+            right_current=2
+            ) %}
+
+            {% if page_number %}
+
+            <li class="page-item {% if page_number == pagination.page %}active{% endif %}">
+
+                <a class="page-link"
+                   href="{{ url_for(
+                                    'admin.email_logs',
+                                    page=page_number,
+                                    search=search,
+                                    status=selected_status,
+                                    email_type=selected_type,
+                                    date_from=date_from,
+                                    date_to=date_to,
+                                    per_page=per_page
+                                ) }}">
+                    {{ page_number }}
+                </a>
+
+            </li>
+
+            {% else %}
+
+            <li class="page-item disabled">
+                <span class="page-link">
+                    …
+                </span>
+            </li>
+
+            {% endif %}
+
+            {% endfor %}
+
+            <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+
+                <a class="page-link"
+                   href="{{
+                            url_for(
+                                'admin.email_logs',
+                                page=pagination.next_num,
+                                search=search,
+                                status=selected_status,
+                                email_type=selected_type,
+                                date_from=date_from,
+                                date_to=date_to,
+                                per_page=per_page
+                            )
+                            if pagination.has_next
+                            else '#'
+                        }}">
+                    Next
+                </a>
+
+            </li>
+
+        </ul>
+
+    </nav>
+
+    {% endif %}
+
+</div>
+
+<!-- =========================================================
+     INDIVIDUAL LOG MODALS
+     ========================================================= -->
+{% for log in logs %}
+
+    {% if log.error_message %}
+
+<div class="modal fade"
+     id="errorModal{{ log.id }}"
+     tabindex="-1"
+     role="dialog"
+     aria-hidden="true">
+
+    <div class="modal-dialog modal-lg modal-dialog-centered"
+         role="document">
+
+        <div class="modal-content">
+
+            <div class="modal-header">
+
+                <h5 class="modal-title">
+                    Email Error Details
+                </h5>
+
+                <button type="button"
+                        class="close"
+                        data-dismiss="modal">
+                    <span>&times;</span>
+                </button>
+
+            </div>
+
+            <div class="modal-body">
+
+                <table class="table table-sm table-borderless">
+
+                    <tr>
+                        <th class="w-25">
+                            Log
+                        </th>
+                        <td>
+                            #{{ log.id }}
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <th>
+                            Recipient
+                        </th>
+                        <td>
+                            {{ log.recipient }}
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <th>
+                            Subject
+                        </th>
+                        <td>
+                            {{ log.subject }}
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <th>
+                            Email Type
+                        </th>
+                        <td>
+                            {{ log.email_type }}
+                        </td>
+                    </tr>
+
+                </table>
+
+                <div class="error-message-box">
+                    {{ log.error_message }}
+                </div>
+
+            </div>
+
+            <div class="modal-footer">
+
+                <button type="button"
+                        class="btn btn-secondary"
+                        data-dismiss="modal">
+                    Close
+                </button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+    {% endif %}
+
+<div class="modal fade"
+     id="deleteLogModal{{ log.id }}"
+     tabindex="-1"
+     role="dialog"
+     aria-hidden="true">
+
+    <div class="modal-dialog modal-dialog-centered"
+         role="document">
+
+        <div class="modal-content">
+
+            <div class="modal-header">
+
+                <h5 class="modal-title">
+                    Delete Email Log
+                </h5>
+
+                <button type="button"
+                        class="close"
+                        data-dismiss="modal">
+                    <span>&times;</span>
+                </button>
+
+            </div>
+
+            <div class="modal-body">
+
+                Delete email log
+                <strong>#{{ log.id }}</strong>?
+
+                <p class="text-muted mt-2 mb-0">
+                    This removes only the log record. It does not affect the email, user, or ticket.
+                </p>
+
+            </div>
+
+            <div class="modal-footer">
+
+                <button type="button"
+                        class="btn btn-secondary"
+                        data-dismiss="modal">
+                    Cancel
+                </button>
+
+                <form action="{{ url_for(
+                            'admin.delete_email_log',
+                            log_id=log.id
+                        ) }}"
+                      method="POST">
+
+                    <input type="hidden"
+                           name="csrf_token"
+                           value="{{ csrf_token() }}">
+
+                    <button type="submit"
+                            class="btn btn-danger">
+                        Delete
+                    </button>
+
+                </form>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endfor %}
+
+<!-- =========================================================
+     DELETE FAILED MODAL
+     ========================================================= -->
+
+<div class="modal fade"
+     id="deleteFailedModal"
+     tabindex="-1"
+     role="dialog"
+     aria-hidden="true">
+
+    <div class="modal-dialog modal-dialog-centered"
+         role="document">
+
+        <div class="modal-content">
+
+            <div class="modal-header">
+
+                <h5 class="modal-title">
+                    Delete Failed Logs
+                </h5>
+
+                <button type="button"
+                        class="close"
+                        data-dismiss="modal">
+                    <span>&times;</span>
+                </button>
+
+            </div>
+
+            <div class="modal-body">
+
+                Delete all
+                <strong>{{ failed }}</strong>
+                failed email log(s)?
+
+                <p class="text-muted mt-2 mb-0">
+                    Sent and pending records will remain.
+                </p>
+
+            </div>
+
+            <div class="modal-footer">
+
+                <button type="button"
+                        class="btn btn-secondary"
+                        data-dismiss="modal">
+                    Cancel
+                </button>
+
+                <form action="{{ url_for(
+                        'admin.delete_failed_email_logs'
+                    ) }}"
+                      method="POST">
+
+                    <input type="hidden"
+                           name="csrf_token"
+                           value="{{ csrf_token() }}">
+
+                    <button type="submit"
+                            class="btn btn-danger">
+                        Delete Failed Logs
+                    </button>
+
+                </form>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+<!-- =========================================================
+     DELETE ALL MODAL
+     ========================================================= -->
+
+<div class="modal fade"
+     id="deleteAllModal"
+     tabindex="-1"
+     role="dialog"
+     aria-hidden="true">
+
+    <div class="modal-dialog modal-dialog-centered"
+         role="document">
+
+        <div class="modal-content">
+
+            <div class="modal-header">
+
+                <h5 class="modal-title">
+                    Clear All Email Logs
+                </h5>
+
+                <button type="button"
+                        class="close"
+                        data-dismiss="modal">
+                    <span>&times;</span>
+                </button>
+
+            </div>
+
+            <form action="{{ url_for(
+                    'admin.delete_all_email_logs'
+                ) }}"
+                  method="POST">
+
+                <div class="modal-body">
+
+                    <input type="hidden"
+                           name="csrf_token"
+                           value="{{ csrf_token() }}">
+
+                    <p>
+                        This permanently removes all
+                        <strong>{{ total }}</strong>
+                        email log records.
+                    </p>
+
+                    <label for="confirmation">
+                        Type
+                        <strong>DELETE</strong>
+                        to confirm:
+                    </label>
+
+                    <input type="text"
+                           name="confirmation"
+                           id="confirmation"
+                           class="form-control"
+                           autocomplete="off"
+                           required>
+
+                    <p class="text-muted mt-2 mb-0">
+                        This does not delete users, tickets, or already-sent emails.
+                    </p>
+
+                </div>
+
+                <div class="modal-footer">
+
+                    <button type="button"
+                            class="btn btn-secondary"
+                            data-dismiss="modal">
+                        Cancel
+                    </button>
+
+                    <button type="submit"
+                            class="btn btn-danger">
+                        Clear All Logs
+                    </button>
+
+                </div>
+
+            </form>
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endblock %}

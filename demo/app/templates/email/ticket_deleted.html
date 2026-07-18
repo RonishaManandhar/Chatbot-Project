@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Ticket Deleted</title>
+</head>
+
+<body style="
+    margin:0;
+    padding:30px;
+    background:#f5f7fa;
+    font-family:Arial, Helvetica, sans-serif;
+    color:#1f2937;
+">
+
+    <div style="
+    max-width:650px;
+    margin:0 auto;
+    background:#ffffff;
+    border-radius:12px;
+    padding:35px;
+    box-shadow:0 4px 18px rgba(0,0,0,0.06);
+">
+
+        <h2 style="
+        margin-top:0;
+        color:#dc2626;
+    ">
+            Support Ticket Deleted
+        </h2>
+
+        <p>
+            Hello {{ user.name }},
+        </p>
+
+        <p>
+            Your support ticket has been deleted from the support system.
+        </p>
+
+        <div style="
+        background:#fef2f2;
+        border:1px solid #fecaca;
+        border-radius:10px;
+        padding:18px;
+        margin:22px 0;
+    ">
+
+            <p style="margin:0 0 8px 0;">
+                <strong>Ticket Number:</strong>
+                {{ ticket_number }}
+            </p>
+
+            <p style="margin:0 0 8px 0;">
+                <strong>Subject:</strong>
+                {{ ticket_subject }}
+            </p>
+
+            {% if deleted_by %}
+            <p style="margin:0;">
+                <strong>Deleted By:</strong>
+                {{ deleted_by }}
+            </p>
+            {% endif %}
+
+        </div>
+
+        <p>
+            This ticket can no longer be viewed or reopened.
+        </p>
+
+        <p>
+            If you still need assistance, please create a new support request.
+        </p>
+
+        <p style="margin:25px 0;">
+            <a href="{{ url_for(
+            'customer.chat',
+            _external=True
+        ) }}"
+               style="
+               display:inline-block;
+               padding

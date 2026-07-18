@@ -1,0 +1,315 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}AI Settings{% endblock %}
+{% endblock %}
+
+{% block text %}
+Configure AI availability, tone, response length, confidence, escalation rules, and custom chatbot instructions.
+{% endblock %}
+
+{% block content %}
+
+<div class="max-w-1000">
+    {% include 'includes/alert.html' %}
+</div>
+
+<style>
+    .settings-card {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 16px;
+        padding: 22px;
+        margin-bottom: 18px;
+        box-shadow: 0 5px 16px rgba(0,0,0,0.05);
+    }
+
+        .settings-card h5 {
+            font-weight: 700;
+            color: #111827;
+            margin-bottom: 8px;
+        }
+
+        .settings-card p {
+            color: #6b7280;
+            font-size: 14px;
+            margin-bottom: 16px;
+        }
+
+    .setting-switch {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        padding: 14px 0;
+        border-bottom: 1px solid #f3f4f6;
+    }
+
+        .setting-switch:last-child {
+            border-bottom: 0;
+        }
+
+    .setting-label strong {
+        display: block;
+        color: #111827;
+    }
+
+    .setting-label small {
+        color: #6b7280;
+    }
+
+    .form-help {
+        font-size: 12px;
+        color: #6b7280;
+        margin-top: 6px;
+    }
+
+    .settings-section-label {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #6b7280;
+        font-weight: 700;
+        margin-bottom: 10px;
+    }
+</style>
+
+<div class="content-box content-lighten max-w-1000">
+
+    <form method="POST">
+
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <!-- AI CONFIGURATION -->
+        <div class="settings-card">
+
+            <div class="settings-section-label">
+                AI Configuration
+            </div>
+
+            <h5>AI Response Control</h5>
+
+            <p>
+                Control whether the chatbot uses AI responses or falls back to a support message.
+            </p>
+
+            <div class="setting-switch">
+                <div class="setting-label">
+                    <strong>AI Enabled</strong>
+                    <small>If disabled, customers receive the fallback message instead of an AI answer.</small>
+                </div>
+
+                <div>
+                    <input type="checkbox"
+                           name="ai_enabled"
+                           {% if setting.ai_enabled %}checked{% endif %}>
+                </div>
+            </div>
+
+            <div class="form-group mt-3">
+                <label>Fallback Message</label>
+
+                <textarea name="fallback_message"
+                          class="form-control"
+                          rows="4"
+                          required>{{ setting.fallback_message }}</textarea>
+
+                <div class="form-help">
+                    This message is shown when AI is disabled or unavailable.
+                </div>
+            </div>
+
+        </div>
+
+        <!-- TONE SETTINGS -->
+        <div class="settings-card">
+
+            <div class="settings-section-label">
+                Tone Settings
+            </div>
+
+            <h5>Chatbot Tone</h5>
+
+            <p>
+                Choose how the chatbot should sound when replying to customers.
+            </p>
+
+            <div class="form-group">
+                <label>Response Tone</label>
+
+                <select name="chatbot_tone" class="form-control">
+
+                    <option value="Friendly"
+                            {% if setting.chatbot_tone=="Friendly" %}selected{% endif %}>
+                        Friendly
+                    </option>
+
+                    <option value="Professional"
+                            {% if setting.chatbot_tone=="Professional" %}selected{% endif %}>
+                        Professional
+                    </option>
+
+                    <option value="Formal"
+                            {% if setting.chatbot_tone=="Formal" %}selected{% endif %}>
+                        Formal
+                    </option>
+
+                    <option value="Simple"
+                            {% if setting.chatbot_tone=="Simple" %}selected{% endif %}>
+                        Simple
+                    </option>
+
+                </select>
+
+                <div class="form-help">
+                    Recommended for customer support: Professional or Simple.
+                </div>
+            </div>
+
+        </div>
+
+        <!-- RESPONSE LENGTH -->
+        <div class="settings-card">
+
+            <div class="settings-section-label">
+                Response Length
+            </div>
+
+            <h5>AI Answer Length</h5>
+
+            <p>
+                Control whether chatbot answers should be short, balanced, or detailed.
+            </p>
+
+            <div class="form-group">
+                <label>Response Length</label>
+
+                <select name="response_length" class="form-control">
+
+                    <option value="Short"
+                            {% if setting.response_length=="Short" %}selected{% endif %}>
+                        Short
+                    </option>
+
+                    <option value="Medium"
+                            {% if setting.response_length=="Medium" %}selected{% endif %}>
+                        Medium
+                    </option>
+
+                    <option value="Detailed"
+                            {% if setting.response_length=="Detailed" %}selected{% endif %}>
+                        Detailed
+                    </option>
+
+                </select>
+
+                <div class="form-help">
+                    Short is useful for quick answers. Detailed is useful for step-by-step support.
+                </div>
+            </div>
+
+        </div>
+
+        <!-- CONFIDENCE SETTINGS -->
+        <div class="settings-card">
+
+            <div class="settings-section-label">
+                Confidence Settings
+            </div>
+
+            <h5>AI Confidence Threshold</h5>
+
+            <p>
+                Set the minimum confidence level before the chatbot gives an AI answer.
+            </p>
+
+            <div class="form-group">
+                <label>Confidence Threshold (%)</label>
+
+                <input type="number"
+                       name="confidence_threshold"
+                       class="form-control"
+                       min="0"
+                       max="100"
+                       value="{{ setting.confidence_threshold }}">
+
+                <div class="form-help">
+                    Recommended: 70. Lower values allow more AI answers. Higher values make escalation more likely.
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ESCALATION SETTINGS -->
+        <div class="settings-card">
+
+            <div class="settings-section-label">
+                Escalation Settings
+            </div>
+
+            <h5>Human Support Escalation</h5>
+
+            <p>
+                Control when chatbot conversations should be escalated to a human support agent.
+            </p>
+
+            <div class="setting-switch">
+                <div class="setting-label">
+                    <strong>Auto Escalation Enabled</strong>
+                    <small>If enabled, messages containing escalation keywords will suggest human support.</small>
+                </div>
+
+                <div>
+                    <input type="checkbox"
+                           name="auto_escalation_enabled"
+                           {% if setting.auto_escalation_enabled %}checked{% endif %}>
+                </div>
+            </div>
+
+            <div class="form-group mt-3">
+                <label>Escalation Keywords</label>
+
+                <textarea name="escalation_keywords"
+                          class="form-control"
+                          rows="3">{{ setting.escalation_keywords }}</textarea>
+
+                <div class="form-help">
+                    Separate keywords with commas. Example: refund, angry, complaint, urgent, manager, lawyer
+                </div>
+            </div>
+
+        </div>
+
+        <!-- CUSTOM SYSTEM PROMPT -->
+        <div class="settings-card">
+
+            <div class="settings-section-label">
+                Custom System Prompt
+            </div>
+
+            <h5>Chatbot Behaviour Instructions</h5>
+
+            <p>
+                Add custom instructions that guide how the chatbot should respond to customers.
+            </p>
+
+            <textarea name="system_prompt"
+                      class="form-control"
+                      rows="6"
+                      placeholder="Example: You are a helpful customer support assistant. Use simple language, stay polite, and escalate sensitive issues to human support.">{{ setting.system_prompt or "" }}</textarea>
+
+            <div class="form-help">
+                This can be used later when building the final AI prompt sent to the model.
+            </div>
+
+        </div>
+
+        <button type="submit" class="btn btn-primary">
+            Save AI Settings
+        </button>
+
+    </form>
+
+</div>
+
+{% endblock %}

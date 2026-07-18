@@ -1,0 +1,27 @@
+﻿Hello {{ user.name }},
+
+Your support ticket has been completed.
+
+Ticket Number:
+{{ ticket.number }}
+
+Subject:
+{{ ticket.subject }}
+
+Please rate your support experience by opening this link:
+
+{{ url_for(
+    'customer.view_ticket',
+    id=ticket.id,
+    _external=True
+) }}
+
+The rating submitted on the ticket page is the same rating shown in:
+
+- View Ticket
+- Customer Chat
+- Admin Customer Satisfaction
+
+You can also add optional feedback.
+
+Support Team

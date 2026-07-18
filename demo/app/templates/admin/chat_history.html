@@ -1,0 +1,175 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}Chat History{% endblock %}
+{% endblock %}
+
+{% block text %}
+View all customer and chatbot messages with filters for role and review status.
+{% endblock %}
+
+{% block content %}
+
+<div class="max-w-1000">
+    {% include 'includes/alert.html' %}
+</div>
+
+<div class="content-box content-lighten">
+
+    <div class="d-flex justify-content-between flex-wrap mb-3">
+        <h5 class="mb-0">Chat History</h5>
+
+        <a href="{{ url_for('admin.review_queue') }}" class="btn btn-primary btn-sm">
+            Back to Review Queue
+        </a>
+    </div>
+
+    <form method="GET" class="row mb-3">
+        <div class="col-md-4 mb-2">
+            <select name="role" class="form-control">
+                <option value="">All Roles</option>
+                <option value="user" {% if selected_role == 'user' %}selected{% endif %}>Customer</option>
+                <option value="assistant" {% if selected_role == 'assistant' %}selected{% endif %}>AI Assistant</option>
+            </select>
+        </div>
+
+        <div class="col-md-4 mb-2">
+            <select name="review_status" class="form-control">
+                <option value="">All Review Status</option>
+                <option value="Pending" {% if selected_review_status == 'Pending' %}selected{% endif %}>Pending</option>
+                <option value="Reviewed" {% if selected_review_status == 'Reviewed' %}selected{% endif %}>Reviewed</option>
+                <option value="Approved" {% if selected_review_status == 'Approved' %}selected{% endif %}>Approved</option>
+                <option value="Rejected" {% if selected_review_status == 'Rejected' %}selected{% endif %}>Rejected</option>
+                <option value="Saved as FAQ" {% if selected_review_status == 'Saved as FAQ' %}selected{% endif %}>Saved as FAQ</option>
+            </select>
+        </div>
+
+        <div class="col-md-4 mb-2">
+            <button type="submit" class="btn btn-primary btn-sm">
+                Filter
+            </button>
+
+            <a href="{{ url_for('admin.chat_history') }}" class="btn btn-secondary btn-sm">
+                Reset
+            </a>
+        </div>
+    </form>
+
+    {% if logs %}
+    <table class="table table-striped table-borderless table-responsive-sm">
+        <thead>
+            <tr>
+                <th>User</th>
+                <th>Role</th>
+                <th>Message</th>
+                <th>FAQ</th>
+                <th>AI</th>
+                <th>Escalated</th>
+                <th>Resolution</th>
+                <th>Review</th>
+                <th>Reviewed By</th>
+                <th>Time</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            {% for log in logs %}
+            <tr>
+                <td>
+                    {% if log.guest_user or not log.user %}
+                    <span class="badge badge-secondary">Guest</span>
+                    {% else %}
+                    {{ log.user.name }}
+                    {% endif %}
+                </td>
+
+                <td>
+                    {% if log.role == "user" %}
+                    <span class="badge badge-primary">Customer</span>
+                    {% elif log.role == "assistant" %}
+                    <span class="badge badge-info">AI</span>
+                    {% else %}
+                    <span class="badge badge-secondary">{{ log.role }}</span>
+                    {% endif %}
+                </td>
+
+                <td style="max-width:420px; white-space:normal;">
+                    {{ log.message }}
+                </td>
+
+                <td>
+                    {% if log.faq_matched %}
+                    <span class="badge badge-success">Yes</span>
+                    {% else %}
+                    <span class="badge badge-secondary">No</span>
+                    {% endif %}
+                </td>
+
+                <td>
+                    {% if log.ai_used %}
+                    <span class="badge badge-primary">Yes</span>
+                    {% else %}
+                    <span class="badge badge-secondary">No</span>
+                    {% endif %}
+                </td>
+
+                <td>
+                    {% if log.escalated %}
+                    <span class="badge badge-danger">Yes</span>
+                    {% else %}
+                    <span class="badge badge-success">No</span>
+                    {% endif %}
+                </td>
+
+                <td>
+                    {% if log.resolution_status == "Solved" %}
+                    <span class="badge badge-success">Solved</span>
+                    {% elif log.resolution_status == "Not Solved" %}
+                    <span class="badge badge-danger">Not Solved</span>
+                    {% else %}
+                    <span class="badge badge-warning">Pending</span>
+                    {% endif %}
+                </td>
+
+                <td>
+                    {% if log.review_status == "Approved" %}
+                    <span class="badge badge-success">Approved</span>
+                    {% elif log.review_status == "Rejected" %}
+                    <span class="badge badge-danger">Rejected</span>
+                    {% elif log.review_status == "Saved as FAQ" %}
+                    <span class="badge badge-primary">Saved as FAQ</span>
+                    {% elif log.review_status == "Reviewed" %}
+                    <span class="badge badge-info">Reviewed</span>
+                    {% else %}
+                    <span class="badge badge-warning">Pending</span>
+                    {% endif %}
+                </td>
+
+                <td>
+                    {% if log.reviewed_by %}
+                    {{ log.reviewed_by.name }}
+                    {% else %}
+                    <span class="text-muted">-</span>
+                    {% endif %}
+                </td>
+
+                <td>
+                    {{ log.created_at.strftime('%d %b %Y, %H:%M') }}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% else %}
+    <div class="text-center py-5">
+        <h5>No chat history found</h5>
+        <p class="text-muted mb-0">
+            Chat messages will appear here once customers use the chatbot.
+        </p>
+    </div>
+    {% endif %}
+
+</div>
+
+{% endblock %}

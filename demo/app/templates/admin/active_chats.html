@@ -1,0 +1,394 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block style %}
+{{ super() }}
+
+<style>
+    .live-card {
+        border: 1px solid #e5e7eb;
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 20px;
+        background: #ffffff;
+        transition: 0.2s ease;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.05);
+    }
+
+        .live-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 28px rgba(0,0,0,0.08);
+        }
+
+    .live-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 15px;
+        margin-bottom: 14px;
+    }
+
+    .live-subject {
+        font-size: 18px;
+        font-weight: 700;
+        color: #111827;
+        word-break: break-word;
+    }
+
+    .live-meta {
+        font-size: 13px;
+        color: #6b7280;
+        margin-top: 4px;
+    }
+
+    .live-badges {
+        margin-top: 14px;
+        margin-bottom: 16px;
+    }
+
+        .live-badges .badge {
+            margin-right: 6px;
+            margin-bottom: 5px;
+            padding: 7px 10px;
+            font-size: 12px;
+        }
+
+    .live-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .live-status {
+        font-size: 14px;
+        color: #374151;
+    }
+
+    .online-dot {
+        width: 10px;
+        height: 10px;
+        background: #10b981;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 6px;
+    }
+
+    .waiting-dot {
+        width: 10px;
+        height: 10px;
+        background: #f59e0b;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 6px;
+    }
+
+    .chat-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+        .chat-actions form {
+            margin: 0;
+        }
+
+    .last-update {
+        margin-top: 10px;
+        font-size: 12px;
+        color: #9ca3af;
+    }
+
+    .empty-active-chats {
+        padding: 48px 20px;
+    }
+</style>
+
+{% endblock %}
+
+{% block header %}
+    {% block title %}
+        Active Support Chats
+    {% endblock %}
+{% endblock %}
+
+{% block text %}
+    Monitor all open, pending, escalated, and active support conversations.
+{% endblock %}
+
+{% block content %}
+
+<div class="max-w-1000">
+
+    {% if active_tickets %}
+
+    {% for ticket in active_tickets %}
+
+    {% set status_name =
+    ticket.status.status
+    if ticket.status
+    else 'Unknown'
+    %}
+
+    {% set status_lower =
+    status_name|lower
+    %}
+
+    {% set priority_name =
+    ticket.priority.priority
+    if ticket.priority
+    else 'Low'
+    %}
+
+    {#
+    Defensive template protection.
+
+    The backend route should already exclude Closed and Solved.
+    This prevents them from displaying even if an old or
+    incorrectly filtered record reaches the template.
+    #}
+
+    {% if status_lower not in ['closed', 'solved'] %}
+
+    <div class="live-card">
+
+        <div class="live-top">
+
+            <div>
+
+                <div class="live-subject">
+                    {{ ticket.subject or 'No subject' }}
+                </div>
+
+                <div class="live-meta">
+
+                    Ticket #{{ ticket.number }}
+
+                    |
+
+                    Customer:
+
+                    {% if ticket.author %}
+                    {{ ticket.author.name }}
+                    {% else %}
+                    Unknown customer
+                    {% endif %}
+
+                </div>
+
+            </div>
+
+            <div>
+
+                {% if status_lower == 'escalated' %}
+
+                <span class="badge badge-danger">
+                    Escalated
+                </span>
+
+                {% elif ticket.owner %}
+
+                <span class="badge badge-success">
+                    Active Support
+                </span>
+
+                {% else %}
+
+                <span class="badge badge-warning">
+                    Waiting for Staff
+                </span>
+
+                {% endif %}
+
+            </div>
+
+        </div>
+
+        <div class="live-badges">
+
+            <span class="badge badge-primary">
+
+                {% if ticket.category %}
+                {{ ticket.category.category }}
+                {% else %}
+                No category
+                {% endif %}
+
+            </span>
+
+            {% if priority_name == 'Urgent' %}
+
+            <span class="badge badge-danger">
+                Urgent
+            </span>
+
+            {% elif priority_name == 'High' %}
+
+            <span class="badge badge-warning">
+                High
+            </span>
+
+            {% elif priority_name == 'Medium' %}
+
+            <span class="badge badge-info">
+                Medium
+            </span>
+
+            {% else %}
+
+            <span class="badge badge-secondary">
+                Low
+            </span>
+
+            {% endif %}
+
+            {% if status_lower == 'open' %}
+
+            <span class="badge badge-primary">
+                Open
+            </span>
+
+            {% elif status_lower == 'pending' %}
+
+            <span class="badge badge-warning">
+                Pending
+            </span>
+
+            {% elif status_lower == 'escalated' %}
+
+            <span class="badge badge-danger">
+                Escalated
+            </span>
+
+            {% elif status_lower == 'waiting for customer' %}
+
+            <span class="badge badge-info">
+                Waiting for Customer
+            </span>
+
+            {% else %}
+
+            <span class="badge badge-secondary">
+                {{ status_name }}
+            </span>
+
+            {% endif %}
+
+        </div>
+
+        <div class="live-footer">
+
+            <div class="live-status">
+
+                {% if ticket.owner %}
+
+                <span class="online-dot"></span>
+
+                Assigned to:
+
+                <strong>
+                    {{ ticket.owner.name }}
+                </strong>
+
+                {% else %}
+
+                <span class="waiting-dot"></span>
+
+                <span class="text-warning">
+                    Waiting for support staff
+                </span>
+
+                {% endif %}
+
+                <div class="last-update">
+
+                    Last updated:
+
+                    {% set last_update =
+                    ticket.updated_at
+                    or ticket.created_at
+                    %}
+
+                    {% if last_update %}
+
+                    {{
+ last_update.strftime(
+                                    '%d %b %Y, %H:%M'
+                                )
+                    }}
+
+                    {% else %}
+
+                    Unknown
+
+                    {% endif %}
+
+                </div>
+
+            </div>
+
+            <div class="chat-actions">
+
+                <a href="{{ url_for(
+                               'admin.view_ticket',
+                               id=ticket.id,
+                               chat=1
+                           ) }}"
+                   class="btn btn-primary btn-sm">
+
+                    Open Chat
+
+                </a>
+
+                {% if not ticket.owner %}
+
+                <form action="{{ url_for(
+                                      'admin.claim_ticket',
+                                      id=ticket.id
+                                  ) }}"
+                      method="POST">
+
+                    <input type="hidden"
+                           name="csrf_token"
+                           value="{{ csrf_token() }}">
+
+                    <button type="submit"
+                            class="btn btn-success btn-sm">
+
+                        Join Chat
+
+                    </button>
+
+                </form>
+
+                {% endif %}
+
+            </div>
+
+        </div>
+
+    </div>
+
+    {% endif %}
+
+    {% endfor %}
+
+    {% else %}
+
+    <div class="content-box content-lighten text-center empty-active-chats">
+
+        <h5>
+            No active chats right now
+        </h5>
+
+        <p class="text-muted mb-0">
+            There are no open, pending, or escalated support conversations.
+        </p>
+
+    </div>
+
+    {% endif %}
+
+</div>
+
+{% endblock %}

@@ -1,0 +1,168 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}Notifications{% endblock %}
+{% endblock %}
+
+{% block text %}
+    View your latest support updates and ticket messages.
+{% endblock %}
+
+{% block content %}
+
+<div class="max-w-1000">
+    {% include 'includes/alert.html' %}
+</div>
+
+<style>
+    .notification-card {
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 14px 16px;
+        margin-bottom: 12px;
+        background: #ffffff;
+    }
+
+        .notification-card.unread {
+            background: #eff6ff;
+            border-color: #93c5fd;
+        }
+
+    .notification-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 6px;
+    }
+
+    .notification-message {
+        font-size: 14px;
+        color: #111827;
+    }
+
+    .notification-date {
+        font-size: 12px;
+        color: #6b7280;
+        white-space: nowrap;
+    }
+
+    .notification-badge {
+        font-size: 11px;
+        padding: 4px 8px;
+        border-radius: 999px;
+    }
+
+    .notification-actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+    }
+</style>
+
+<div class="content-box mb-3 content-lighten max-w-1000">
+
+    <div class="notification-actions">
+        <h5 class="mb-0">Your Notifications</h5>
+
+        <form action="{{ url_for('customer.mark_all_notifications_read') }}" method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <button type="submit" class="btn btn-primary btn-sm">
+                Mark all as read
+            </button>
+        </form>
+    </div>
+
+    {% if my_notifications %}
+
+    {% for row in my_notifications %}
+
+    <div class="notification-card {% if row.seen == 0 %}unread{% endif %}">
+
+        <div class="notification-top">
+
+            <div>
+                {% if row.seen == 0 %}
+                <span class="badge badge-primary notification-badge">
+                    Unread
+                </span>
+                {% else %}
+                <span class="badge badge-secondary notification-badge">
+                    Read
+                </span>
+                {% endif %}
+            </div>
+
+            <div class="notification-date">
+                {{ row.created_at.strftime('%d %b %Y, %H:%M') }}
+            </div>
+
+        </div>
+
+        <div class="notification-message">
+
+            {% if row.sender and row.sender.id == current_user.id %}
+            <strong>You</strong>
+            {% elif row.sender %}
+            <strong>{{ row.sender.name }}</strong>
+            {% else %}
+            <strong>System</strong>
+            {% endif %}
+
+            {% if row.message == 'commented on ticket' %}
+            sent you a new message on
+            {% elif row.message == 'uploaded an attachment' %}
+            uploaded an attachment on
+            {% elif row.message == 'updated status on ticket' %}
+            updated the status of
+            {% elif row.message == 'updated priority on ticket' %}
+            updated the priority of
+            {% elif row.message == 'updated category on ticket' %}
+            updated the category of
+            {% elif row.message == 'commented on unassigned ticket' %}
+            sent a new message on unassigned
+            {% elif row.message == 'assigned ticket' %}
+            assigned
+            {% elif row.message == 'joined your support ticket' %}
+            joined
+            {% elif row.message == 'reopened ticket' %}
+            reopened
+            {% else %}
+            {{ row.message }}
+            {% endif %}
+
+            {% if row.ticket_notification %}
+
+            <a href="{{ url_for('customer.open_notification', nid=row.id) }}">
+                Ticket #{{ row.ticket_notification.number }}
+            </a>
+
+            {% else %}
+
+            <a href="{{ url_for('customer.open_notification', nid=row.id) }}">
+                Open Notification
+            </a>
+
+            {% endif %}
+
+        </div>
+
+    </div>
+
+    {% endfor %}
+
+    {% else %}
+
+    <div class="text-center py-4">
+        <p class="text-muted mb-0">
+            You have no notifications yet.
+        </p>
+    </div>
+
+    {% endif %}
+
+</div>
+
+{% endblock %}

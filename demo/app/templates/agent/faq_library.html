@@ -1,0 +1,192 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}FAQ Library{% endblock %}
+{% endblock %}
+
+{% block text %}
+    Search approved FAQs by question, answer, category, or tags while helping customers.
+{% endblock %}
+
+{% block content %}
+
+<style>
+    .faq-toolbar {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 18px;
+    }
+
+    .faq-search {
+        flex: 1;
+        min-width: 260px;
+        border-radius: 999px;
+    }
+
+    .faq-select {
+        max-width: 240px;
+        border-radius: 999px;
+    }
+
+    .faq-card {
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        padding: 18px;
+        margin-bottom: 14px;
+        background: #ffffff;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.04);
+    }
+
+    .faq-question {
+        font-weight: 700;
+        color: #111827;
+        margin-bottom: 8px;
+    }
+
+    .faq-answer {
+        color: #374151;
+        font-size: 14px;
+        margin-bottom: 12px;
+    }
+
+    .faq-meta {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .faq-pill {
+        border-radius: 999px;
+        padding: 5px 10px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+
+    .faq-category {
+        background: #dbeafe;
+        color: #1d4ed8;
+    }
+
+    .faq-tag {
+        background: #f3f4f6;
+        color: #374151;
+    }
+
+    .empty-faq {
+        text-align: center;
+        padding: 36px;
+        border: 1px dashed #d1d5db;
+        border-radius: 14px;
+        color: #6b7280;
+        background: #f9fafb;
+    }
+</style>
+
+<div class="content-box mb-3 content-lighten max-w-1000">
+
+    <div class="faq-toolbar">
+
+        <input type="text"
+               id="faqSearch"
+               class="form-control faq-search"
+               placeholder="Search FAQ question, answer, tag, or category...">
+
+        <select id="faqCategoryFilter" class="form-control faq-select">
+            <option value="">All categories</option>
+
+            {% for category in categories %}
+            <option value="{{ category.category|lower }}">
+                {{ category.category }}
+            </option>
+            {% endfor %}
+        </select>
+
+    </div>
+
+    {% if faqs %}
+
+    {% for faq in faqs %}
+
+    <div class="faq-card faq-item"
+         data-category="{% if faq.category %}{{ faq.category.category|lower }}{% endif %}"
+         data-search="{{ faq.question|lower }} {{ faq.answer|striptags|lower }} {% if faq.category %}{{ faq.category.category|lower }}{% endif %} {{ faq.tags|default('', true)|lower }}">
+
+        <div class="faq-question">
+            {{ faq.question }}
+        </div>
+
+        <div class="faq-answer fr-view">
+            {{ faq.answer|safe }}
+        </div>
+
+        <div class="faq-meta">
+
+            {% if faq.category %}
+            <span class="faq-pill faq-category">
+                {{ faq.category.category }}
+            </span>
+            {% endif %}
+
+            {% if faq.tags %}
+            {% for tag in faq.tags.split(',') %}
+            <span class="faq-pill faq-tag">
+                #{{ tag.strip() }}
+            </span>
+            {% endfor %}
+            {% endif %}
+
+        </div>
+
+    </div>
+
+    {% endfor %}
+
+    {% else %}
+
+    <div class="empty-faq">
+        <h6>No active FAQs found</h6>
+        <p class="mb-0">
+            Admin-created active FAQs will appear here.
+        </p>
+    </div>
+
+    {% endif %}
+
+</div>
+
+{% endblock %}
+
+{% block script %}
+{{ super() }}
+
+<script>(function () {
+        const searchInput = document.getElementById("faqSearch");
+        const categoryFilter = document.getElementById("faqCategoryFilter");
+        const items = document.querySelectorAll(".faq-item");
+
+        function filterFaqs() {
+            const searchValue = (searchInput.value || "").toLowerCase();
+            const categoryValue = (categoryFilter.value || "").toLowerCase();
+
+            items.forEach(function (item) {
+                const searchable = item.getAttribute("data-search") || "";
+                const category = item.getAttribute("data-category") || "";
+
+                const matchesSearch = searchable.includes(searchValue);
+                const matchesCategory = !categoryValue || category === categoryValue;
+
+                item.style.display = matchesSearch && matchesCategory ? "" : "none";
+            });
+        }
+
+        if (searchInput) {
+            searchInput.addEventListener("keyup", filterFaqs);
+        }
+
+        if (categoryFilter) {
+            categoryFilter.addEventListener("change", filterFaqs);
+        }
+    })();</script>
+
+{% endblock %}

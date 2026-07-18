@@ -1,0 +1,93 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}Repeated Questions{% endblock %}
+{% endblock %}
+
+{% block text %}
+Identify common customer questions that are repeatedly asked. These are ideal candidates for new FAQs and chatbot training.
+{% endblock %}
+
+{% block content %}
+
+<div class="content-box content-lighten">
+
+    <div class="row mb-3">
+        <div class="col-md-3">
+            <div class="alert alert-info">
+                <strong>{{ repeated|length }}</strong><br>
+                Repeated Questions
+            </div>
+        </div>
+    </div>
+
+    {% if repeated %}
+
+    <table class="table table-striped table-borderless table-responsive-sm">
+
+        <thead>
+            <tr>
+                <th>Question</th>
+                <th>Times Asked</th>
+                <th>Priority</th>
+            </tr>
+        </thead>
+
+        <tbody>
+
+            {% for item in repeated %}
+            <tr>
+
+                <td style="max-width:600px; white-space:normal;">
+                    {{ item.message }}
+                </td>
+
+                <td>
+                    <span class="badge badge-primary">
+                        {{ item.count }}
+                    </span>
+                </td>
+
+                <td>
+
+                    {% if item.count >= 10 %}
+                    <span class="badge badge-danger">
+                        Create FAQ Immediately
+                    </span>
+
+                    {% elif item.count >= 5 %}
+                    <span class="badge badge-warning">
+                        High Priority
+                    </span>
+
+                    {% else %}
+                    <span class="badge badge-info">
+                        Monitor
+                    </span>
+
+                    {% endif %}
+
+                </td>
+
+            </tr>
+            {% endfor %}
+
+        </tbody>
+
+    </table>
+
+    {% else %}
+
+    <div class="text-center py-5">
+        <h5>No repeated questions found</h5>
+
+        <p class="text-muted mb-0">
+            Repeated customer questions will appear here.
+        </p>
+    </div>
+
+    {% endif %}
+
+</div>
+
+{% endblock %}

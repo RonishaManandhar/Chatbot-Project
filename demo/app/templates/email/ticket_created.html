@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+</head>
+
+<body style="
+    font-family:Arial;
+    background:#f5f7fa;
+    padding:30px;
+">
+
+    <div style="
+    max-width:650px;
+    margin:auto;
+    background:white;
+    border-radius:12px;
+    padding:35px;
+">
+
+        <h2 style="color:#2563eb;">
+            Support Ticket Created
+        </h2>
+
+        <p>Hello {{ user.name }},</p>
+
+        <p>
+            Your support ticket has been successfully created.
+        </p>
+
+        <hr>
+
+        <p>
+            <strong>Ticket Number:</strong><br>
+            {{ ticket.number }}
+        </p>
+
+        <p>
+            <strong>Subject:</strong><br>
+            {{ ticket.subject }}
+        </p>
+
+        <p>
+            Our support team will review your request shortly.
+        </p>
+
+        <p>
+            Thank you for contacting support.
+        </p>
+
+    </div>
+
+</body>
+</html>

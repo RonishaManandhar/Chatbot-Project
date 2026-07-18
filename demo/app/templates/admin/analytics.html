@@ -1,0 +1,373 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}Analytics Dashboard{% endblock %}
+{% endblock %}
+
+{% block text %}
+    Monitor trends, escalations, workload, ticket growth, and support performance.
+{% endblock %}
+
+{% block content %}
+
+<style>
+
+    .analytics-stat {
+        border-radius: 14px;
+        padding: 20px;
+        color: white;
+        margin-bottom: 20px;
+        box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+    }
+
+        .analytics-stat h6 {
+            font-size: 13px;
+            opacity: 0.9;
+            margin-bottom: 8px;
+        }
+
+        .analytics-stat h2 {
+            font-size: 30px;
+            font-weight: 700;
+            margin: 0;
+        }
+
+    .analytics-blue {
+        background: linear-gradient(45deg, #2563eb, #60a5fa);
+    }
+
+    .analytics-green {
+        background: linear-gradient(45deg, #059669, #34d399);
+    }
+
+    .analytics-yellow {
+        background: linear-gradient(45deg, #d97706, #fbbf24);
+    }
+
+    .analytics-red {
+        background: linear-gradient(45deg, #dc2626, #fb7185);
+    }
+
+    .analytics-purple {
+        background: linear-gradient(45deg, #7c3aed, #a78bfa);
+    }
+
+    .analytics-dark {
+        background: linear-gradient(45deg, #111827, #374151);
+    }
+
+    .analytics-box {
+        background: white;
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 24px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.05);
+    }
+
+    .analytics-title {
+        font-weight: 700;
+        margin-bottom: 16px;
+        font-size: 16px;
+    }
+
+    .analytics-box canvas {
+        width: 100% !important;
+        height: 320px !important;
+    }
+</style>
+
+<div class="max-w-1000">
+    <div class="row">
+
+        <div class="col-md-3">
+            <div class="analytics-stat analytics-blue">
+                <h6>Total Tickets</h6>
+                <h2>{{ total_tickets }}</h2>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="analytics-stat analytics-green">
+                <h6>Solved Tickets</h6>
+                <h2>{{ solved_count }}</h2>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="analytics-stat analytics-yellow">
+                <h6>Escalated</h6>
+                <h2>{{ escalated_count }}</h2>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="analytics-stat analytics-purple">
+                <h6>Active Chats</h6>
+                <h2>{{ active_count }}</h2>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="row">
+
+        <div class="col-md-3">
+            <div class="analytics-stat analytics-dark">
+                <h6>AI Responses</h6>
+                <h2>{{ ai_total }}</h2>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="analytics-stat analytics-green">
+                <h6>AI Solved</h6>
+                <h2>{{ ai_solved }}</h2>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="analytics-stat analytics-red">
+                <h6>AI Not Solved</h6>
+                <h2>{{ ai_not_solved }}</h2>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="analytics-stat analytics-purple">
+                <h6>AI Accuracy</h6>
+                <h2>{{ ai_accuracy }}%</h2>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="row">
+
+        <div class="col-md-3">
+            <div class="analytics-stat analytics-blue">
+                <h6>FAQ Answers</h6>
+                <h2>{{ faq_total }}</h2>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="analytics-stat analytics-green">
+                <h6>FAQ Solved</h6>
+                <h2>{{ faq_solved }}</h2>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="analytics-stat analytics-red">
+                <h6>FAQ Not Solved</h6>
+                <h2>{{ faq_not_solved }}</h2>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="analytics-stat analytics-yellow">
+                <h6>FAQ Accuracy</h6>
+                <h2>{{ faq_accuracy }}%</h2>
+            </div>
+        </div>
+
+    </div>
+    <div class="row">
+
+        <div class="col-md-6">
+            <div class="analytics-box">
+                <div class="analytics-title">
+                    Tickets Created Per Day
+                </div>
+
+                <canvas id="ticketsPerDayChart"></canvas>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="analytics-box">
+                <div class="analytics-title">
+                    Solved Tickets Per Day
+                </div>
+
+                <canvas id="solvedPerDayChart"></canvas>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="analytics-box">
+                <div class="analytics-title">
+                    Escalations Per Day
+                </div>
+
+                <canvas id="escalationChart"></canvas>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="analytics-box">
+                <div class="analytics-title">
+                    Ticket Status Overview
+                </div>
+
+                <canvas id="statusChart"></canvas>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="analytics-box">
+                <div class="analytics-title">
+                    Tickets By Category
+                </div>
+
+                <canvas id="categoryChart"></canvas>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="analytics-box">
+                <div class="analytics-title">
+                    Tickets By Priority
+                </div>
+
+                <canvas id="priorityChart"></canvas>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="analytics-box">
+                <div class="analytics-title">
+                    Agent Workload
+                </div>
+
+                <canvas id="agentChart"></canvas>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="analytics-box">
+                <div class="analytics-title">
+                    Customer Activity
+                </div>
+
+                <canvas id="customerChart"></canvas>
+            </div>
+        </div>
+
+    </div>
+
+</div>
+
+{% endblock %}
+
+{% block script %}
+{{ super() }}
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+
+    Chart.defaults.font.family = "'Inter', sans-serif";
+
+    // TICKETS PER DAY
+    new Chart(document.getElementById('ticketsPerDayChart'), {
+        type: 'line',
+        data: {
+            labels: {{ dates|tojson }},
+            datasets: [{
+                label: 'Tickets',
+                data: {{ tickets_per_day|tojson }},
+                tension: 0.4,
+                fill: true
+            }]
+        }
+    });
+
+    // SOLVED PER DAY
+    new Chart(document.getElementById('solvedPerDayChart'), {
+        type: 'line',
+        data: {
+            labels: {{ dates|tojson }},
+            datasets: [{
+                label: 'Solved',
+                data: {{ solved_per_day|tojson }},
+                tension: 0.4,
+                fill: true
+            }]
+        }
+    });
+
+    // ESCALATIONS
+    new Chart(document.getElementById('escalationChart'), {
+        type: 'line',
+        data: {
+            labels: {{ dates|tojson }},
+            datasets: [{
+                label: 'Escalations',
+                data: {{ escalations_per_day|tojson }},
+                tension: 0.4,
+                fill: true
+            }]
+        }
+    });
+
+    // STATUS
+    new Chart(document.getElementById('statusChart'), {
+        type: 'doughnut',
+        data: {
+            labels: {{ status_labels|tojson }},
+            datasets: [{
+                data: {{ status_counts|tojson }}
+            }]
+        }
+    });
+
+    // CATEGORY
+    new Chart(document.getElementById('categoryChart'), {
+        type: 'bar',
+        data: {
+            labels: {{ category_labels|tojson }},
+            datasets: [{
+                label: 'Tickets',
+                data: {{ category_counts|tojson }}
+            }]
+        }
+    });
+
+    // PRIORITY
+    new Chart(document.getElementById('priorityChart'), {
+        type: 'pie',
+        data: {
+            labels: {{ priority_labels|tojson }},
+            datasets: [{
+                data: {{ priority_counts|tojson }}
+            }]
+        }
+    });
+
+    // AGENT WORKLOAD
+    new Chart(document.getElementById('agentChart'), {
+        type: 'bar',
+        data: {
+            labels: {{ agent_labels|tojson }},
+            datasets: [{
+                label: 'Assigned Tickets',
+                data: {{ agent_counts|tojson }}
+            }]
+        }
+    });
+
+    // CUSTOMER ACTIVITY
+    new Chart(document.getElementById('customerChart'), {
+        type: 'polarArea',
+        data: {
+            labels: {{ customer_labels|tojson }},
+            datasets: [{
+                data: {{ customer_counts|tojson }}
+            }]
+        }
+    });
+
+</script>
+
+{% endblock %}

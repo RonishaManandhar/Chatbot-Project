@@ -1,0 +1,326 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}Resolution Comparison{% endblock %}
+{% endblock %}
+
+{% block text %}
+Compare FAQ, AI, human support, and escalation outcomes to understand which support method is most effective.
+{% endblock %}
+
+{% block content %}
+
+<div class="content-box content-lighten">
+
+    <h4 class="mb-4">Resolution Comparison</h4>
+
+    <div class="row">
+
+        <div class="col-md-3 mb-3">
+            <div class="card border-success">
+                <div class="card-body text-center">
+                    <h2>{{ faq_solved }}</h2>
+                    <h6>FAQ Solved</h6>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-3">
+            <div class="card border-primary">
+                <div class="card-body text-center">
+                    <h2>{{ ai_solved }}</h2>
+                    <h6>AI Solved</h6>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-3">
+            <div class="card border-info">
+                <div class="card-body text-center">
+                    <h2>{{ human_solved }}</h2>
+                    <h6>Human Solved</h6>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-3">
+            <div class="card border-warning">
+                <div class="card-body text-center">
+                    <h2>{{ escalated }}</h2>
+                    <h6>Escalated</h6>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+</div>
+
+<div class="content-box content-lighten mt-4">
+
+    <h5 class="mb-3">Resolution Method Comparison</h5>
+
+    <div class="card">
+        <div class="card-body">
+            <canvas id="resolutionComparisonChart"></canvas>
+        </div>
+    </div>
+
+</div>
+
+<div class="content-box content-lighten mt-4">
+
+    <h5 class="mb-3">Solved vs Failed Comparison</h5>
+
+    <div class="card">
+        <div class="card-body">
+            <canvas id="solvedFailedChart"></canvas>
+        </div>
+    </div>
+
+</div>
+
+<div class="content-box content-lighten mt-4">
+
+    <h5 class="mb-3">Detailed Breakdown</h5>
+
+    <div class="table-responsive">
+
+        <table class="table table-striped table-borderless">
+
+            <thead>
+                <tr>
+                    <th>Support Method</th>
+                    <th>Solved</th>
+                    <th>Failed / Not Solved</th>
+                    <th>Total Known Outcomes</th>
+                    <th>Success Rate</th>
+                </tr>
+            </thead>
+
+            <tbody>
+
+                {% set faq_total = faq_solved + faq_failed %}
+                {% set ai_total = ai_solved + ai_failed %}
+
+                <tr>
+                    <td>
+                        <strong>FAQ-Based Support</strong>
+                    </td>
+
+                    <td>
+                        <span class="badge badge-success">
+                            {{ faq_solved }}
+                        </span>
+                    </td>
+
+                    <td>
+                        <span class="badge badge-danger">
+                            {{ faq_failed }}
+                        </span>
+                    </td>
+
+                    <td>
+                        {{ faq_total }}
+                    </td>
+
+                    <td>
+                        {% if faq_total > 0 %}
+                        {{ ((faq_solved / faq_total) * 100)|round(1) }}%
+                        {% else %}
+                        0%
+                        {% endif %}
+                    </td>
+                </tr>
+
+                <tr>
+                    <td>
+                        <strong>AI-Based Support</strong>
+                    </td>
+
+                    <td>
+                        <span class="badge badge-success">
+                            {{ ai_solved }}
+                        </span>
+                    </td>
+
+                    <td>
+                        <span class="badge badge-danger">
+                            {{ ai_failed }}
+                        </span>
+                    </td>
+
+                    <td>
+                        {{ ai_total }}
+                    </td>
+
+                    <td>
+                        {% if ai_total > 0 %}
+                        {{ ((ai_solved / ai_total) * 100)|round(1) }}%
+                        {% else %}
+                        0%
+                        {% endif %}
+                    </td>
+                </tr>
+
+                <tr>
+                    <td>
+                        <strong>Human Support</strong>
+                    </td>
+
+                    <td>
+                        <span class="badge badge-success">
+                            {{ human_solved }}
+                        </span>
+                    </td>
+
+                    <td>
+                        <span class="badge badge-secondary">
+                            -
+                        </span>
+                    </td>
+
+                    <td>
+                        {{ human_solved }}
+                    </td>
+
+                    <td>
+                        {% if human_solved > 0 %}
+                        100%
+                        {% else %}
+                        0%
+                        {% endif %}
+                    </td>
+                </tr>
+
+                <tr>
+                    <td>
+                        <strong>Escalated Cases</strong>
+                    </td>
+
+                    <td>
+                        <span class="badge badge-warning">
+                            {{ escalated }}
+                        </span>
+                    </td>
+
+                    <td>
+                        <span class="badge badge-secondary">
+                            -
+                        </span>
+                    </td>
+
+                    <td>
+                        {{ escalated }}
+                    </td>
+
+                    <td>
+                        Review Required
+                    </td>
+                </tr>
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+    const faqSolved = {{ faq_solved|default(0) }};
+    const faqFailed = {{ faq_failed|default(0) }};
+    const aiSolved = {{ ai_solved|default(0) }};
+    const aiFailed = {{ ai_failed|default(0) }};
+    const humanSolved = {{ human_solved|default(0) }};
+    const escalated = {{ escalated|default(0) }};
+
+    const resolutionComparisonChart = document.getElementById("resolutionComparisonChart");
+
+    if (resolutionComparisonChart) {
+        new Chart(resolutionComparisonChart, {
+            type: "bar",
+            data: {
+                labels: [
+                    "FAQ Solved",
+                    "AI Solved",
+                    "Human Solved",
+                    "Escalated"
+                ],
+                datasets: [{
+                    label: "Resolved / Escalated Count",
+                    data: [
+                        faqSolved,
+                        aiSolved,
+                        humanSolved,
+                        escalated
+                    ],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            precision: 0
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    const solvedFailedChart = document.getElementById("solvedFailedChart");
+
+    if (solvedFailedChart) {
+        new Chart(solvedFailedChart, {
+            type: "bar",
+            data: {
+                labels: [
+                    "FAQ",
+                    "AI"
+                ],
+                datasets: [
+                    {
+                        label: "Solved",
+                        data: [
+                            faqSolved,
+                            aiSolved
+                        ],
+                        borderWidth: 1
+                    },
+                    {
+                        label: "Not Solved",
+                        data: [
+                            faqFailed,
+                            aiFailed
+                        ],
+                        borderWidth: 1
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            precision: 0
+                        }
+                    }
+                }
+            }
+        });
+    }
+</script>
+
+{% endblock %}

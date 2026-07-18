@@ -1,0 +1,111 @@
+﻿{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}Support Help{% endblock %}
+{% endblock %}
+
+{% block text %}
+    Internal guide for support agents on handling tickets, chats, priorities, and escalations.
+{% endblock %}
+
+{% block content %}
+
+<style>
+    .help-card {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 16px;
+        box-shadow: 0 5px 16px rgba(0,0,0,0.05);
+    }
+
+    .help-title {
+        font-weight: 700;
+        color: #111827;
+        margin-bottom: 10px;
+    }
+
+    .help-card ul {
+        margin-bottom: 0;
+        padding-left: 20px;
+        color: #374151;
+        font-size: 14px;
+        line-height: 1.7;
+    }
+
+    .help-pill {
+        display: inline-block;
+        padding: 5px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+        margin-bottom: 10px;
+        background: #dbeafe;
+        color: #1d4ed8;
+    }
+</style>
+
+<div class="max-w-1000">
+
+    <div class="help-card">
+        <span class="help-pill">Ticket Workflow</span>
+        <h5 class="help-title">How to Handle New Tickets</h5>
+        <ul>
+            <li>Open the New Tickets page to view unassigned customer requests.</li>
+            <li>Click Join / Claim to take responsibility for a ticket.</li>
+            <li>Once claimed, the ticket moves into your assigned work queue.</li>
+            <li>Open the chat and respond to the customer professionally.</li>
+            <li>Update the ticket status as the issue progresses.</li>
+        </ul>
+    </div>
+
+    <div class="help-card">
+        <span class="help-pill">Live Chat</span>
+        <h5 class="help-title">How to Use Live Chat</h5>
+        <ul>
+            <li>Click Enter Chat or Open Chat from the dashboard.</li>
+            <li>Customer messages appear live without refreshing.</li>
+            <li>Attachments uploaded by customers appear in both chat and attachment section.</li>
+            <li>Use clear, short, helpful responses.</li>
+            <li>Use the FAQ Library to copy accurate approved answers.</li>
+        </ul>
+    </div>
+
+    <div class="help-card">
+        <span class="help-pill">Escalation</span>
+        <h5 class="help-title">When to Escalate to Admin</h5>
+        <ul>
+            <li>Escalate if the issue is outside your permission level.</li>
+            <li>Escalate if the customer reports a serious system problem.</li>
+            <li>Escalate if the customer is abusive or the issue is sensitive.</li>
+            <li>Escalate if payment, account deletion, or admin-only action is required.</li>
+        </ul>
+    </div>
+
+    <div class="help-card">
+        <span class="help-pill">Status Guide</span>
+        <h5 class="help-title">Ticket Status Meanings</h5>
+        <ul>
+            <li><strong>Open:</strong> Ticket has been created but not fully handled yet.</li>
+            <li><strong>Pending:</strong> Agent is working on it or waiting for customer response.</li>
+            <li><strong>Solved:</strong> Issue appears resolved but may still need confirmation.</li>
+            <li><strong>Closed:</strong> Ticket is finished and chat becomes read-only.</li>
+            <li><strong>Escalated:</strong> Ticket has been passed to admin for higher-level support.</li>
+        </ul>
+    </div>
+
+    <div class="help-card">
+        <span class="help-pill">Priority Guide</span>
+        <h5 class="help-title">Priority Levels</h5>
+        <ul>
+            <li><strong>Low:</strong> General question or non-urgent request.</li>
+            <li><strong>Medium:</strong> Normal support issue needing attention.</li>
+            <li><strong>High:</strong> Important issue affecting customer use.</li>
+            <li><strong>Urgent:</strong> Serious issue that should be handled immediately.</li>
+        </ul>
+    </div>
+
+</div>
+
+{% endblock %}

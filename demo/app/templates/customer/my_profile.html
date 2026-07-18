@@ -1,0 +1,406 @@
+{% from 'macros/render_input.html' import render_input %}
+{% from 'macros/render_upload.html' import render_upload %}
+
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}
+        My Profile
+    {% endblock %}
+{% endblock %}
+
+{% block text %}
+    Update your name and profile picture, or manage your email and password.
+{% endblock %}
+
+{% block content %}
+
+<div class="max-w-1000">
+    {% include 'includes/alert.html' %}
+</div>
+
+<div class="max-w-1000">
+
+    <div class="row">
+
+        <!-- ==================================================
+             PROFILE SUMMARY
+             ================================================== -->
+
+        <div class="col-md-5 col-lg-4">
+
+            <div class="content-box mb-3 content-lighten text-center">
+
+                <img class="rounded-circle mx-auto profile-img"
+                     src="{{ url_for(
+                        'static',
+                        filename='uploads/profiles/' +
+                        (user.image or 'default-profile.png')
+                    ) }}?v={{
+                        user.updated_at.timestamp()
+                        if user.updated_at
+                        else user.id
+                    }}"
+                     alt="{{ user.name }} profile picture">
+
+                <hr>
+
+                <h5 class="mb-1">
+                    {{ user.name }}
+                </h5>
+
+                <div class="text-muted mb-1">
+                    {{ user.email }}
+                </div>
+
+                <span class="badge badge-primary">
+                    {{ user.role }}
+                </span>
+
+            </div>
+
+            <!-- ==============================================
+                 ACCOUNT SETTINGS
+                 ============================================== -->
+
+            <div class="content-box mb-3 content-lighten">
+
+                <h6 class="mb-3">
+                    Account Settings
+                </h6>
+
+                <a href="{{ url_for('customer.change_email') }}"
+                   class="btn btn-outline-info btn-block mb-2">
+                    <i class="fa fa-envelope mr-1"></i>
+                    Change Email
+                </a>
+
+                <a href="{{ url_for('customer.change_password') }}"
+                   class="btn btn-outline-warning btn-block">
+                    <i class="fa fa-lock mr-1"></i>
+                    Change Password
+                </a>
+
+            </div>
+
+        </div>
+
+        <!-- ==================================================
+             PROFILE FORM
+             ================================================== -->
+
+        <div class="col-md-7 col-lg-8">
+
+            <div class="content-box content-lighten">
+
+                <form action="{{ url_for('customer.my_profile') }}"
+                      method="POST"
+                      enctype="multipart/form-data"
+                      class="form-validation"
+                      novalidate>
+
+                    {{ form.csrf_token }}
+
+                    <!-- ======================================
+                         NAME
+                         ====================================== -->
+
+                    <div class="form-group">
+
+                        <label for="name">
+                            Full Name
+                        </label>
+
+                        {{
+                            render_input(
+                                form.name,
+                                "",
+                                "Please enter your full name."
+                            )
+                        }}
+
+                        {% if form.name.errors %}
+
+                        {% for error in form.name.errors %}
+
+                        <div class="text-danger small mt-1">
+                            {{ error }}
+                        </div>
+
+                        {% endfor %}
+
+                        {% endif %}
+
+                    </div>
+
+                    <!-- ======================================
+                         CURRENT EMAIL
+                         ====================================== -->
+
+                    <div class="form-group">
+
+                        <label>
+                            Current Email
+                        </label>
+
+                        <input type="email"
+                               class="form-control"
+                               value="{{ user.email }}"
+                               disabled>
+
+                        <small class="form-text text-muted">
+
+                            To update your email address, use the
+                            Change Email button under Account Settings.
+
+                        </small>
+
+                    </div>
+
+                    <!-- ======================================
+                         PROFILE PICTURE
+                         ====================================== -->
+
+                    <div class="form-group">
+
+                        <label for="profile">
+                            Profile Picture
+                        </label>
+
+                        <div class="custom-file">
+
+                            {{ render_upload(form.profile) }}
+
+                            <label class="custom-file-label"
+                                   for="profile"
+                                   id="profileFileLabel">
+                                Choose PNG, JPG, or JPEG
+                            </label>
+
+                        </div>
+
+                        <small class="form-text text-muted">
+
+                            Maximum file size: 2 MB.
+                            Leave this empty to keep your current picture.
+
+                        </small>
+
+                        {% if form.profile.errors %}
+
+                        {% for error in form.profile.errors %}
+
+                        <div class="text-danger small mt-1">
+                            {{ error }}
+                        </div>
+
+                        {% endfor %}
+
+                        {% endif %}
+
+                    </div>
+
+                    <!-- ======================================
+                         IMAGE PREVIEW
+                         ====================================== -->
+
+                    <div id="profilePreviewContainer"
+                         class="mb-3"
+                         style="display:none;">
+
+                        <label class="d-block">
+                            New Picture Preview
+                        </label>
+
+                        <img id="profilePreview"
+                             class="rounded-circle profile-img"
+                             src=""
+                             alt="Profile picture preview">
+
+                    </div>
+
+                    <!-- ======================================
+                         ACTIONS
+                         ====================================== -->
+
+                    <div class="d-flex flex-wrap align-items-center">
+
+                        <button type="submit"
+                                class="btn btn-primary mr-2 mb-2">
+                            <i class="fa fa-save mr-1"></i>
+                            Save Profile
+                        </button>
+
+                        <a href="{{ url_for('customer.change_email') }}"
+                           class="btn btn-info mr-2 mb-2">
+                            <i class="fa fa-envelope mr-1"></i>
+                            Change Email
+                        </a>
+
+                        <a href="{{ url_for('customer.change_password') }}"
+                           class="btn btn-warning mb-2">
+                            <i class="fa fa-lock mr-1"></i>
+                            Change Password
+                        </a>
+
+                    </div>
+
+                </form>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endblock %}
+
+{% block script %}
+{{ super() }}
+
+<script>
+    document.addEventListener(
+        "DOMContentLoaded",
+        function () {
+            const profileInput =
+                document.getElementById(
+                    "profile"
+                );
+
+            const profileFileLabel =
+                document.getElementById(
+                    "profileFileLabel"
+                );
+
+            const previewContainer =
+                document.getElementById(
+                    "profilePreviewContainer"
+                );
+
+            const previewImage =
+                document.getElementById(
+                    "profilePreview"
+                );
+
+            if (!profileInput) {
+                return;
+            }
+
+            profileInput.addEventListener(
+                "change",
+                function () {
+                    const file =
+                        this.files &&
+                            this.files.length
+                            ? this.files[0]
+                            : null;
+
+                    if (!file) {
+                        if (profileFileLabel) {
+                            profileFileLabel.textContent =
+                                "Choose PNG, JPG, or JPEG";
+                        }
+
+                        if (previewContainer) {
+                            previewContainer.style.display =
+                                "none";
+                        }
+
+                        this.setCustomValidity("");
+
+                        return;
+                    }
+
+                    const allowedTypes = [
+                        "image/png",
+                        "image/jpeg"
+                    ];
+
+                    const maximumSize =
+                        2 * 1024 * 1024;
+
+                    if (
+                        !allowedTypes.includes(
+                            file.type
+                        )
+                    ) {
+                        this.setCustomValidity(
+                            "Only PNG, JPG, and JPEG files are allowed."
+                        );
+
+                        this.reportValidity();
+                        this.value = "";
+
+                        if (profileFileLabel) {
+                            profileFileLabel.textContent =
+                                "Choose PNG, JPG, or JPEG";
+                        }
+
+                        if (previewContainer) {
+                            previewContainer.style.display =
+                                "none";
+                        }
+
+                        return;
+                    }
+
+                    if (
+                        file.size >
+                        maximumSize
+                    ) {
+                        this.setCustomValidity(
+                            "The profile picture must be 2 MB or smaller."
+                        );
+
+                        this.reportValidity();
+                        this.value = "";
+
+                        if (profileFileLabel) {
+                            profileFileLabel.textContent =
+                                "Choose PNG, JPG, or JPEG";
+                        }
+
+                        if (previewContainer) {
+                            previewContainer.style.display =
+                                "none";
+                        }
+
+                        return;
+                    }
+
+                    this.setCustomValidity("");
+
+                    if (profileFileLabel) {
+                        profileFileLabel.textContent =
+                            file.name;
+                    }
+
+                    if (
+                        previewContainer &&
+                        previewImage
+                    ) {
+                        const reader =
+                            new FileReader();
+
+                        reader.onload =
+                            function (event) {
+                                previewImage.src =
+                                    event.target.result;
+
+                                previewContainer.style.display =
+                                    "block";
+                            };
+
+                        reader.readAsDataURL(
+                            file
+                        );
+                    }
+                }
+            );
+        }
+    );
+</script>
+
+{% endblock %}

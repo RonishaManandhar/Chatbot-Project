@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<body>
+
+    <h2>Ticket Escalated To Human Support</h2>
+
+    <p>Hello {{ user.name }},</p>
+
+    <p>
+        Our AI assistant was unable to fully resolve your issue.
+        Your request has now been escalated to our human support team.
+    </p>
+
+    <p>
+
+        Ticket Number:
+        <strong>{{ ticket.number }}</strong>
+
+        <br>
+
+        Subject:
+        <strong>{{ ticket.subject }}</strong>
+
+    </p>
+
+    <p>
+        A support agent will review your issue shortly.
+    </p>
+
+    <a href="{{ url_for(
+'customer.view_ticket',
+id=ticket.id,
+_external=True
+) }}">
+        View Ticket
+    </a>
+
+    <br><br>
+
+    Thank you for your patience.
+
+</body>
+</html>

@@ -1,0 +1,859 @@
+/* ==========================================================
+   IT SUPPORT REQUEST
+   CUSTOMER CHAT
+========================================================== */
+
+.support-page {
+    width: 100%;
+    height: calc(100vh - 165px);
+    display: flex;
+    flex-direction: column;
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
+    border-radius: 18px;
+    overflow: hidden;
+}
+
+
+/* ==========================================================
+   HEADER
+========================================================== */
+
+.support-chat-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    padding: 18px 24px;
+    background: #ffffff;
+    border-bottom: 1px solid #e5e7eb;
+    flex-shrink: 0;
+}
+
+    .support-chat-header h4 {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 700;
+        color: #111827;
+    }
+
+    .support-chat-header p {
+        margin: 4px 0 0;
+        font-size: 13px;
+        color: #6b7280;
+    }
+
+
+/* ==========================================================
+   BADGES
+========================================================== */
+
+.support-ticket-meta {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.support-badge {
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    border: 1px solid #e5e7eb;
+    background: #f3f4f6;
+    color: #374151;
+}
+
+.status-open {
+    background: #dbeafe;
+    color: #1d4ed8;
+    border-color: #bfdbfe;
+}
+
+.status-pending {
+    background: #fef3c7;
+    color: #92400e;
+    border-color: #fde68a;
+}
+
+.status-waiting-for-customer {
+    background: #fff7ed;
+    color: #c2410c;
+    border-color: #fdba74;
+}
+
+.status-closed {
+    background: #dcfce7;
+    color: #166534;
+    border-color: #bbf7d0;
+}
+
+.priority-low {
+    background: #ecfdf5;
+    color: #15803d;
+}
+
+.priority-medium {
+    background: #eff6ff;
+    color: #2563eb;
+}
+
+.priority-high {
+    background: #fff7ed;
+    color: #ea580c;
+}
+
+.priority-urgent {
+    background: #fef2f2;
+    color: #dc2626;
+}
+
+
+/* ==========================================================
+   CHAT BODY
+========================================================== */
+
+.support-chat-panel {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    background: #ffffff;
+}
+
+.support-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 28px;
+    background: #f8fafc;
+    scroll-behavior: smooth;
+}
+
+
+/* ==========================================================
+   FIRST CARD
+========================================================== */
+
+.support-system-card {
+    max-width: 900px;
+    width: 100%;
+    margin: 0 auto;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 18px;
+    padding: 30px;
+    box-shadow: 0 10px 28px rgba(0,0,0,.05);
+}
+
+    .support-system-card h5 {
+        margin-bottom: 10px;
+        font-size: 22px;
+        font-weight: 700;
+        color: #111827;
+    }
+
+    .support-system-card p {
+        color: #6b7280;
+        margin-bottom: 24px;
+        line-height: 1.6;
+    }
+
+
+/* ==========================================================
+   TRIAGE OPTIONS
+========================================================== */
+
+.triage-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit,minmax(220px,1fr));
+    gap: 14px;
+}
+
+.triage-option {
+    border: 1px solid #e5e7eb;
+    background: #ffffff;
+    border-radius: 14px;
+    padding: 18px;
+    text-align: left;
+    cursor: pointer;
+    transition: .2s;
+    font-size: 14px;
+    font-weight: 600;
+    color: #111827;
+}
+
+    .triage-option:hover {
+        transform: translateY(-2px);
+        border-color: #2563eb;
+        background: #eff6ff;
+    }
+
+    .triage-option i {
+        margin-right: 10px;
+        color: #2563eb;
+    }
+
+
+/* ==========================================================
+   INPUT AREA
+========================================================== */
+
+.support-input-area {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    padding: 16px 18px;
+    background: #ffffff;
+    border-top: 1px solid #e5e7eb;
+}
+
+.support-icon-btn {
+    width: 46px;
+    height: 46px;
+    border: none;
+    border-radius: 12px;
+    background: #f3f4f6;
+    cursor: pointer;
+    transition: .2s;
+}
+
+    .support-icon-btn:hover {
+        background: #e5e7eb;
+    }
+
+#supportInput {
+    flex: 1;
+    resize: none;
+    min-height: 48px;
+    max-height: 180px;
+    padding: 13px 15px;
+    border-radius: 14px;
+    border: 1px solid #d1d5db;
+    outline: none;
+    background: #f9fafb;
+    font-size: 14px;
+}
+
+    #supportInput:focus {
+        border-color: #2563eb;
+        background: #ffffff;
+    }
+
+.support-send-btn {
+    border: none;
+    border-radius: 12px;
+    background: #2563eb;
+    color: #ffffff;
+    font-weight: 700;
+    height: 46px;
+    padding: 0 22px;
+    cursor: pointer;
+}
+
+    .support-send-btn:hover {
+        background: #1d4ed8;
+    }
+
+    .support-send-btn:disabled,
+    .support-icon-btn:disabled,
+    #supportInput:disabled {
+        opacity: .55;
+        cursor: not-allowed;
+    }
+
+/* ==========================================================
+   CHAT BUBBLES
+========================================================== */
+
+.chat-row {
+    display: flex;
+    margin-bottom: 18px;
+    width: 100%;
+}
+
+.chat-left {
+    justify-content: flex-start;
+}
+
+.chat-right {
+    justify-content: flex-end;
+}
+
+.chat-bubble {
+    max-width: 78%;
+    border-radius: 18px;
+    padding: 14px 16px;
+    word-break: break-word;
+    font-size: 14px;
+    line-height: 1.65;
+    box-shadow: 0 2px 8px rgba(0,0,0,.06);
+}
+
+.customer-bubble {
+    background: #2563eb;
+    color: #ffffff;
+    border-bottom-right-radius: 4px;
+}
+
+.agent-bubble {
+    background: #ffffff;
+    color: #111827;
+    border: 1px solid #e5e7eb;
+    border-bottom-left-radius: 4px;
+}
+
+.system-bubble {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    color: #111827;
+    max-width: 86%;
+}
+
+.ai-bubble {
+    background: #f3f4f6;
+    border: 1px solid #d1d5db;
+    color: #111827;
+}
+
+.chat-bubble strong {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 12px;
+    opacity: .75;
+}
+
+.chat-bubble p {
+    margin: 0;
+}
+
+.chat-bubble a {
+    color: inherit;
+    text-decoration: underline;
+    font-weight: 600;
+}
+
+.chat-time {
+    margin-top: 8px;
+    font-size: 10px;
+    opacity: .65;
+}
+
+
+/* ==========================================================
+   TRIAGE QUESTION
+========================================================== */
+
+.triage-question {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-left: 4px solid #2563eb;
+    border-radius: 14px;
+    padding: 16px;
+    margin-bottom: 18px;
+}
+
+    .triage-question h6 {
+        margin-bottom: 8px;
+        font-weight: 700;
+        color: #111827;
+    }
+
+    .triage-question p {
+        margin: 0;
+        color: #4b5563;
+    }
+
+
+/* ==========================================================
+   AI ANSWER CARD
+========================================================== */
+
+.ai-answer-card {
+    background: #ffffff;
+    border: 1px solid #dbeafe;
+    border-radius: 16px;
+    padding: 18px;
+    margin-bottom: 18px;
+}
+
+.ai-answer-title {
+    color: #2563eb;
+    font-weight: 700;
+    margin-bottom: 10px;
+}
+
+.ai-answer-card ul {
+    margin: 10px 0 0 18px;
+}
+
+.ai-answer-card li {
+    margin-bottom: 6px;
+}
+
+
+/* ==========================================================
+   KNOWLEDGE BASE CARD
+========================================================== */
+
+.kb-card {
+    border: 1px solid #e5e7eb;
+    background: #ffffff;
+    border-radius: 14px;
+    padding: 16px;
+    margin-bottom: 14px;
+}
+
+.kb-card-title {
+    font-weight: 700;
+    margin-bottom: 6px;
+    color: #111827;
+}
+
+.kb-card small {
+    color: #6b7280;
+}
+
+
+/* ==========================================================
+   ATTACHMENT CARD
+========================================================== */
+
+.attachment-card {
+    border: 1px dashed #cbd5e1;
+    background: #ffffff;
+    border-radius: 14px;
+    padding: 16px;
+    margin-top: 12px;
+}
+
+    .attachment-card h6 {
+        margin-bottom: 8px;
+        font-weight: 700;
+    }
+
+    .attachment-card small {
+        display: block;
+        margin-top: 8px;
+        color: #6b7280;
+    }
+
+
+/* ==========================================================
+   TRIAGE SUMMARY
+========================================================== */
+
+.triage-summary {
+    background: #ffffff;
+    border: 1px solid #bfdbfe;
+    border-radius: 16px;
+    padding: 20px;
+    margin: 18px 0;
+}
+
+    .triage-summary h5 {
+        color: #2563eb;
+        margin-bottom: 16px;
+        font-weight: 700;
+    }
+
+    .triage-summary table {
+        width: 100%;
+    }
+
+    .triage-summary td {
+        padding: 7px 0;
+        vertical-align: top;
+    }
+
+        .triage-summary td:first-child {
+            width: 180px;
+            font-weight: 700;
+            color: #374151;
+        }
+
+
+/* ==========================================================
+   ACTION BUTTONS
+========================================================== */
+
+.support-mini-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 18px;
+}
+
+.support-mini-btn {
+    border: none;
+    border-radius: 12px;
+    padding: 10px 16px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 700;
+    transition: .2s;
+}
+
+    .support-mini-btn.success {
+        background: #16a34a;
+        color: #ffffff;
+    }
+
+        .support-mini-btn.success:hover {
+            background: #15803d;
+        }
+
+    .support-mini-btn.primary {
+        background: #2563eb;
+        color: #ffffff;
+    }
+
+        .support-mini-btn.primary:hover {
+            background: #1d4ed8;
+        }
+
+    .support-mini-btn.secondary {
+        background: #f3f4f6;
+        color: #111827;
+    }
+
+        .support-mini-btn.secondary:hover {
+            background: #e5e7eb;
+        }
+
+    .support-mini-btn.danger {
+        background: #dc2626;
+        color: #ffffff;
+    }
+
+        .support-mini-btn.danger:hover {
+            background: #b91c1c;
+        }
+
+
+/* ==========================================================
+   CUSTOMER SATISFACTION
+========================================================== */
+
+.rating-card {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 16px;
+    padding: 22px;
+    margin-top: 18px;
+}
+
+    .rating-card h5 {
+        margin-bottom: 12px;
+    }
+
+.rating-stars {
+    display: flex;
+    gap: 8px;
+    margin: 16px 0;
+}
+
+    .rating-stars i {
+        font-size: 28px;
+        color: #d1d5db;
+        cursor: pointer;
+        transition: .2s;
+    }
+
+        .rating-stars i:hover {
+            color: #fbbf24;
+        }
+
+        .rating-stars i.active {
+            color: #f59e0b;
+        }
+
+.rating-card textarea {
+    width: 100%;
+    min-height: 120px;
+    border-radius: 12px;
+    border: 1px solid #d1d5db;
+    padding: 12px;
+    resize: vertical;
+}
+
+/* ==========================================================
+   LOADING
+========================================================== */
+
+.support-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    color: #6b7280;
+    font-size: 14px;
+}
+
+.support-spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid #e5e7eb;
+    border-top: 3px solid #2563eb;
+    border-radius: 50%;
+    animation: supportSpin .8s linear infinite;
+    margin-right: 12px;
+}
+
+@keyframes supportSpin {
+
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+
+/* ==========================================================
+   AI TYPING
+========================================================== */
+
+.typing-row {
+    display: flex;
+    margin-bottom: 16px;
+}
+
+.typing-bubble {
+    background: #f3f4f6;
+    border: 1px solid #e5e7eb;
+    border-radius: 16px;
+    padding: 14px 18px;
+}
+
+.typing-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 5px;
+    background: #6b7280;
+    animation: typing 1.2s infinite;
+}
+
+    .typing-dot:nth-child(2) {
+        animation-delay: .2s;
+    }
+
+    .typing-dot:nth-child(3) {
+        animation-delay: .4s;
+    }
+
+@keyframes typing {
+
+    0% {
+        opacity: .25;
+        transform: translateY(0);
+    }
+
+    50% {
+        opacity: 1;
+        transform: translateY(-4px);
+    }
+
+    100% {
+        opacity: .25;
+        transform: translateY(0);
+    }
+}
+
+
+/* ==========================================================
+   CONVERSATION CARDS
+========================================================== */
+
+.ticket-card {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    padding: 16px;
+    margin-bottom: 12px;
+}
+
+.ticket-card-title {
+    font-weight: 700;
+    color: #111827;
+    margin-bottom: 8px;
+}
+
+.ticket-card-meta {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    font-size: 12px;
+    color: #6b7280;
+}
+
+
+/* ==========================================================
+   STATUS
+========================================================== */
+
+.status-open {
+    color: #2563eb;
+}
+
+.status-pending {
+    color: #d97706;
+}
+
+.status-solved {
+    color: #16a34a;
+}
+
+.status-closed {
+    color: #dc2626;
+}
+
+
+/* ==========================================================
+   EMPTY
+========================================================== */
+
+.support-empty {
+    padding: 50px;
+    text-align: center;
+    color: #9ca3af;
+}
+
+    .support-empty i {
+        font-size: 48px;
+        margin-bottom: 15px;
+    }
+
+
+/* ==========================================================
+   SCROLLBAR
+========================================================== */
+
+.support-history-list::-webkit-scrollbar,
+.support-messages::-webkit-scrollbar {
+    width: 8px;
+}
+
+.support-history-list::-webkit-scrollbar-thumb,
+.support-messages::-webkit-scrollbar-thumb {
+    background: #d1d5db;
+    border-radius: 20px;
+}
+
+    .support-history-list::-webkit-scrollbar-thumb:hover,
+    .support-messages::-webkit-scrollbar-thumb:hover {
+        background: #9ca3af;
+    }
+
+
+/* ==========================================================
+   RESPONSIVE
+========================================================== */
+
+@media (max-width:1100px) {
+
+    .support-page {
+        grid-template-columns: 260px 1fr;
+    }
+}
+
+@media (max-width:900px) {
+
+    .support-page {
+        grid-template-columns: 1fr;
+        height: auto;
+    }
+
+    .support-history-panel {
+        max-height: 250px;
+        border-right: none;
+        border-bottom: 1px solid #e5e7eb;
+    }
+
+    .support-chat-panel {
+        min-height: 650px;
+    }
+}
+
+@media (max-width:700px) {
+
+    .triage-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .support-chat-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .chat-bubble {
+        max-width: 95%;
+    }
+
+    .support-ticket-meta {
+        margin-top: 10px;
+    }
+
+    .support-input-area {
+        padding: 10px;
+    }
+
+    .support-icon-btn {
+        width: 40px;
+        height: 40px;
+    }
+
+    .support-send-btn {
+        height: 40px;
+    }
+}
+
+@media (max-width:500px) {
+
+    .support-system-card {
+        padding: 16px;
+    }
+
+    .support-history-header {
+        padding: 12px;
+    }
+
+    .support-messages {
+        padding: 14px;
+    }
+
+    .support-chat-header {
+        padding: 14px;
+    }
+
+        .support-chat-header h4 {
+            font-size: 16px;
+        }
+}
+
+
+.rating-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+}
+
+.rating-btn {
+    min-width: 42px;
+    height: 42px;
+}
+
+    .rating-btn.selected {
+        background: #198754;
+        border-color: #198754;
+        color: #ffffff;
+    }
+
+.closed-ticket-review-result {
+    min-height: 20px;
+    font-size: 13px;
+}

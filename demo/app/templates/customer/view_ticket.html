@@ -1,0 +1,427 @@
+﻿{% from 'macros/render_select.html' import render_select %}
+
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block style %}
+{{ super() }}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/froala-editor/css/froala_style.min.css') }}">
+
+<style>
+    .ticket-status-pill {
+        display: inline-block;
+        padding: 5px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 600;
+        background: #e5e7eb;
+        color: #111827;
+    }
+
+        .ticket-status-pill.closed {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .ticket-status-pill.active {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+    .timeline-item {
+        border-left: 3px solid #e5e7eb;
+        padding-left: 14px;
+        margin-bottom: 18px;
+    }
+
+    .timeline-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 6px;
+    }
+
+    .timeline-author {
+        font-weight: 700;
+        color: #111827;
+    }
+
+    .timeline-role {
+        font-size: 12px;
+        color: #6b7280;
+    }
+
+    .timeline-time {
+        font-size: 12px;
+        color: #6b7280;
+        white-space: nowrap;
+    }
+
+    .timeline-body {
+        background: #f8fafc;
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        padding: 10px 12px;
+    }
+</style>
+{% endblock %}
+
+{% block header %}
+    {% block title %}Ticket Information{% endblock %}
+{% endblock %}
+
+{% block text %}
+    Track your ticket details, status, attachments, and conversation history.
+{% endblock %}
+
+{% block button %}
+<button type="button"
+        class="btn btn-danger btn-sm"
+        data-toggle="modal"
+        data-target="#deleteModal">
+    Delete
+</button>
+{% endblock %}
+
+{% block content %}
+
+{% set ticket_status = ticket.status.status if ticket.status else 'Unknown' %}
+
+<div class="max-w-1000">
+    {% include 'includes/alert.html' %}
+</div>
+
+<div class="content-box mb-3 content-lighten max-w-1000">
+
+    <h5 class="mb-3">Ticket Summary</h5>
+
+    <table class="table table-striped table-borderless">
+        <tbody>
+
+            <tr>
+                <td class="w-25">Ticket Number</td>
+                <td>#{{ ticket.number }}</td>
+            </tr>
+
+            <tr>
+                <td>Date Created</td>
+                <td>
+                    {{ ticket.created_at.strftime('%d %b %Y, %H:%M %p') if ticket.created_at else '' }}
+                </td>
+            </tr>
+
+            <tr>
+                <td>Subject</td>
+                <td>{{ ticket.subject }}</td>
+            </tr>
+
+            <tr>
+                <td>Message</td>
+                <td>
+                    <div class="fr-view">
+                        {{ ticket.body|safe }}
+                    </div>
+                </td>
+            </tr>
+
+            <tr>
+                <td>Assigned To</td>
+                <td>
+                    {% if ticket.owner %}
+                    {{ ticket.owner.name }}
+                    {% else %}
+                    <span class="text-muted">Not assigned yet</span>
+                    {% endif %}
+                </td>
+            </tr>
+
+            <tr>
+                <td>Category</td>
+                <td>
+                    {% if ticket.category %}
+                    {{ ticket.category.category }}
+                    {% else %}
+                    <span class="text-muted">Not assigned yet</span>
+                    {% endif %}
+                </td>
+            </tr>
+
+            <tr>
+                <td>Priority</td>
+                <td>
+                    {% if ticket.priority %}
+                    {{ ticket.priority.priority }}
+                    {% else %}
+                    <span class="text-muted">Not assigned yet</span>
+                    {% endif %}
+                </td>
+            </tr>
+
+            <tr>
+                <td>Status</td>
+                <td>
+                    {% if ticket_status == 'Closed' %}
+                    <span class="ticket-status-pill closed">Closed</span>
+                    {% else %}
+                    <span class="ticket-status-pill active">{{ ticket_status }}</span>
+                    {% endif %}
+                </td>
+            </tr>
+
+            <tr>
+                <td>Original Attachment</td>
+                <td>
+                    {% if ticket.file_link %}
+                    <a href="{{ url_for('customer.download_attachment', id=ticket.author.id, filename=ticket.file_link) }}">
+                        {{ ticket.orig_file }}
+                    </a>
+                    {% else %}
+                    <span class="text-muted">No original attachment</span>
+                    {% endif %}
+                </td>
+            </tr>
+
+        </tbody>
+    </table>
+
+</div>
+
+{% if ticket_status == 'Closed' %}
+<div class="content-box mb-3 content-lighten max-w-1000 text-center">
+
+    <h6 class="mb-2">This ticket has been closed.</h6>
+
+    <p class="text-muted mb-3">
+        Did this solve your issue?
+    </p>
+
+    <form action="{{ url_for('customer.confirm_ticket_solved', id=ticket.id) }}"
+          method="POST"
+          style="display:inline-block;">
+
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <button type="submit" class="btn btn-success btn-sm">
+            Yes, issue solved
+        </button>
+
+    </form>
+
+    <form action="{{ url_for('customer.reopen_ticket', id=ticket.id) }}"
+          method="POST"
+          style="display:inline-block;">
+
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <button type="submit" class="btn btn-warning btn-sm">
+            No, reopen ticket
+        </button>
+
+    </form>
+
+</div>
+
+<div class="content-box mb-3 content-lighten max-w-1000">
+
+    <h5 class="mb-3">Customer Satisfaction Rating</h5>
+
+    {% if existing_rating %}
+    <div class="alert alert-success">
+        <strong>Your rating:</strong> {{ existing_rating.rating }}/5
+
+        {% if existing_rating.feedback %}
+        <hr>
+        <strong>Feedback</strong>
+        <p class="mb-0">{{ existing_rating.feedback }}</p>
+        {% endif %}
+    </div>
+
+    <p class="text-muted">
+        You may update your rating below if your experience has changed.
+    </p>
+    {% else %}
+    <div class="alert alert-info">
+        This ticket has been completed. Please rate your support experience.
+    </div>
+    {% endif %}
+
+    <form method="POST"
+          action="{{ url_for('customer.rate_ticket', ticket_id=ticket.id) }}">
+
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div class="form-group">
+            <label>Rating</label>
+
+            <select class="form-control"
+                    name="rating"
+                    required>
+
+                <option value="">
+                    Select Rating
+                </option>
+
+                <option value="5"
+                        {% if existing_rating and existing_rating.rating==5 %}
+                        selected
+                        {% elif not existing_rating and prefill_rating==5 %}
+                        selected
+                        {% endif %}>
+                    ⭐⭐⭐⭐⭐ Excellent
+                </option>
+
+                <option value="4"
+                        {% if existing_rating and existing_rating.rating==4 %}
+                        selected
+                        {% elif not existing_rating and prefill_rating==4 %}
+                        selected
+                        {% endif %}>
+                    ⭐⭐⭐⭐ Good
+                </option>
+
+                <option value="3"
+                        {% if existing_rating and existing_rating.rating==3 %}
+                        selected
+                        {% elif not existing_rating and prefill_rating==3 %}
+                        selected
+                        {% endif %}>
+                    ⭐⭐⭐ Average
+                </option>
+
+                <option value="2"
+                        {% if existing_rating and existing_rating.rating==2 %}
+                        selected
+                        {% elif not existing_rating and prefill_rating==2 %}
+                        selected
+                        {% endif %}>
+                    ⭐⭐ Poor
+                </option>
+
+                <option value="1"
+                        {% if existing_rating and existing_rating.rating==1 %}
+                        selected
+                        {% elif not existing_rating and prefill_rating==1 %}
+                        selected
+                        {% endif %}>
+                    ⭐ Very Poor
+                </option>
+
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>Feedback Optional</label>
+
+            <textarea class="form-control"
+                      rows="5"
+                      name="feedback"
+                      placeholder="Tell us about your support experience...">{% if existing_rating %}{{ existing_rating.feedback or "" }}{% endif %}</textarea>
+        </div>
+
+        <button type="submit" class="btn btn-primary">
+            {% if existing_rating %}
+            Update Rating
+            {% else %}
+            Submit Rating
+            {% endif %}
+        </button>
+
+    </form>
+
+</div>
+{% endif %}
+
+<div class="content-box mb-3 content-lighten max-w-1000">
+
+    <h5 class="mb-3">Conversation History</h5>
+
+    {% if comments %}
+    {% for comment in comments %}
+    <div class="timeline-item">
+
+        <div class="timeline-header">
+            <div>
+                <span class="timeline-author">
+                    {{ comment.user.name }}
+                </span>
+
+                <span class="timeline-role">
+                    {{ comment.user.role }}
+                </span>
+            </div>
+
+            <div class="timeline-time">
+                {{ comment.created_at.strftime('%d %b %Y, %H:%M %p') if comment.created_at else '' }}
+            </div>
+        </div>
+
+        <div class="timeline-body fr-view">
+            {{ comment.comment|safe }}
+        </div>
+
+    </div>
+    {% endfor %}
+    {% else %}
+    <p class="text-muted mb-0">
+        No conversation history yet.
+    </p>
+    {% endif %}
+
+</div>
+
+<div class="modal fade"
+     id="deleteModal"
+     tabindex="-1"
+     role="dialog"
+     aria-labelledby="deleteModalLabel"
+     aria-hidden="true">
+
+    <div class="modal-dialog modal-dialog-centered" role="document">
+
+        <div class="modal-content">
+
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteModalLabel">
+                    Delete Confirmation
+                </h5>
+
+                <button type="button"
+                        class="close"
+                        data-dismiss="modal"
+                        aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+
+            <div class="modal-body">
+                <p>
+                    Are you sure you want to delete this ticket?
+                    This action cannot be undone.
+                </p>
+            </div>
+
+            <div class="modal-footer">
+
+                <button type="button"
+                        class="btn btn-secondary"
+                        data-dismiss="modal">
+                    Close
+                </button>
+
+                <form action="{{ url_for('customer.delete_ticket', uid=ticket.author.id, tid=ticket.id) }}"
+                      method="POST">
+
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                    <input type="submit" class="btn btn-danger" value="Delete">
+
+                </form>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endblock %}

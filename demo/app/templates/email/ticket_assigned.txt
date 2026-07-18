@@ -1,0 +1,13 @@
+Hello {{ user.name }}
+
+Your ticket is now assigned.
+
+Ticket Number:
+{{ ticket.number }}
+
+Assigned Agent:
+{{ ticket.owner.name }}
+
+The agent will contact you shortly.
+
+Support Team

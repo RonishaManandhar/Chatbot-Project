@@ -1,0 +1,144 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}Knowledge Base{% endblock %}
+{% endblock %}
+
+{% block text %}
+Search approved knowledge articles while helping customers.
+{% endblock %}
+
+{% block content %}
+
+<div class="max-w-1000">
+    {% include 'includes/alert.html' %}
+</div>
+
+<style>
+    .article-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 18px;
+    }
+
+    .article-card {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 18px;
+        padding: 22px;
+        box-shadow: 0 5px 14px rgba(0,0,0,0.04);
+        height: 100%;
+    }
+
+        .article-card h5 {
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .article-card p {
+            color: #6b7280;
+            font-size: 14px;
+        }
+
+    .filter-box {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 18px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+</style>
+
+<div class="filter-box">
+
+    <form method="GET" class="row">
+
+        <div class="col-md-5 mb-2">
+            <input type="text"
+                   name="search"
+                   class="form-control"
+                   placeholder="Search articles..."
+                   value="{{ search }}">
+        </div>
+
+        <div class="col-md-4 mb-2">
+            <select name="category_id" class="form-control">
+                <option value="">All Categories</option>
+
+                {% for category in categories %}
+                <option value="{{ category.id }}"
+                        {% if selected_category_id==category.id %}selected{% endif %}>
+                    {{ category.category }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="col-md-3 mb-2">
+            <button type="submit" class="btn btn-primary btn-block">
+                Search
+            </button>
+        </div>
+
+    </form>
+
+</div>
+
+<div class="content-box content-lighten">
+
+    <h4 class="mb-4">
+        Knowledge Base Articles
+    </h4>
+
+    {% if articles %}
+
+    <div class="article-grid">
+
+        {% for article in articles %}
+
+        <div class="article-card">
+
+            <h5>
+                {{ article.title }}
+            </h5>
+
+            <p>
+                {{ article.content[:180] }}{% if article.content|length > 180 %}...{% endif %}
+            </p>
+
+            <div class="mb-2">
+                <span class="badge badge-primary">
+                    {{ article.category.category if article.category else "Uncategorised" }}
+                </span>
+
+                {% if article.tags %}
+                <span class="badge badge-secondary">
+                    {{ article.tags }}
+                </span>
+                {% endif %}
+            </div>
+
+            <small class="text-muted">
+                Views: {{ article.view_count }}
+            </small>
+
+        </div>
+
+        {% endfor %}
+
+    </div>
+
+    {% else %}
+
+    <div class="text-center py-5">
+        <h5>No articles found</h5>
+        <p class="text-muted mb-0">
+            Try changing your search or category filter.
+        </p>
+    </div>
+
+    {% endif %}
+
+</div>
+
+{% endblock %}

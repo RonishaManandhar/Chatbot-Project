@@ -1,0 +1,261 @@
+{% extends 'layouts/dashboard.base.html' %}
+
+{% block header %}
+    {% block title %}Export Reports{% endblock %}
+{% endblock %}
+
+{% block text %}
+Download reports for tickets, chatbot activity, FAQs, and knowledge base content.
+{% endblock %}
+
+{% block content %}
+
+<div class="max-w-1000">
+    {% include 'includes/alert.html' %}
+</div>
+
+<div class="content-box content-lighten">
+
+    <h4 class="mb-4">
+        Export Reports
+    </h4>
+
+    <div class="row">
+
+        <div class="col-md-6 mb-4">
+
+            <div class="card border-primary">
+
+                <div class="card-body">
+
+                    <h5>
+                        Ticket Report
+                    </h5>
+
+                    <p class="text-muted">
+                        Export all support tickets including customer,
+                        assigned agent, category, priority and status.
+                    </p>
+
+                    <a href="{{ url_for('admin.export_tickets_csv') }}"
+                       class="btn btn-primary">
+                        <i class="fa fa-download"></i>
+                        Download CSV
+                    </a>
+
+                </div>
+
+            </div>
+
+        </div>
+
+        <div class="col-md-6 mb-4">
+
+            <div class="card border-success">
+
+                <div class="card-body">
+
+                    <h5>
+                        Chatbot Report
+                    </h5>
+
+                    <p class="text-muted">
+                        Export chatbot logs, AI usage,
+                        FAQ matches, escalations and review results.
+                    </p>
+
+                    <a href="{{ url_for('admin.export_chatbot_csv') }}"
+                       class="btn btn-success">
+                        <i class="fa fa-download"></i>
+                        Download CSV
+                    </a>
+
+                </div>
+
+            </div>
+
+        </div>
+
+        <div class="col-md-6 mb-4">
+
+            <div class="card border-info">
+
+                <div class="card-body">
+
+                    <h5>
+                        FAQ Report
+                    </h5>
+
+                    <p class="text-muted">
+                        Export all FAQs including category,
+                        tags, views and active status.
+                    </p>
+
+                    <a href="{{ url_for('admin.export_faqs_csv') }}"
+                       class="btn btn-info">
+                        <i class="fa fa-download"></i>
+                        Download CSV
+                    </a>
+
+                </div>
+
+            </div>
+
+        </div>
+
+        <div class="col-md-6 mb-4">
+
+            <div class="card border-warning">
+
+                <div class="card-body">
+
+                    <h5>
+                        Knowledge Base Report
+                    </h5>
+
+                    <p class="text-muted">
+                        Export knowledge articles,
+                        authors, categories, tags and views.
+                    </p>
+
+                    <a href="{{ url_for('admin.export_articles_csv') }}"
+                       class="btn btn-warning">
+                        <i class="fa fa-download"></i>
+                        Download CSV
+                    </a>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+<div class="content-box content-lighten mt-4">
+
+    <h5 class="mb-3">
+        Report Information
+    </h5>
+
+    <div class="table-responsive">
+
+        <table class="table table-striped">
+
+            <thead>
+                <tr>
+                    <th>Report</th>
+                    <th>Includes</th>
+                    <th>Format</th>
+                </tr>
+            </thead>
+
+            <tbody>
+
+                <tr>
+                    <td>
+                        Ticket Report
+                    </td>
+
+                    <td>
+                        Ticket number, customer, agent,
+                        category, priority, status, dates
+                    </td>
+
+                    <td>
+                        CSV
+                    </td>
+                </tr>
+
+                <tr>
+                    <td>
+                        Chatbot Report
+                    </td>
+
+                    <td>
+                        AI usage, FAQ matches,
+                        escalations, review outcomes
+                    </td>
+
+                    <td>
+                        CSV
+                    </td>
+                </tr>
+
+                <tr>
+                    <td>
+                        FAQ Report
+                    </td>
+
+                    <td>
+                        Questions, answers,
+                        categories, tags, views
+                    </td>
+
+                    <td>
+                        CSV
+                    </td>
+                </tr>
+
+                <tr>
+                    <td>
+                        Knowledge Base Report
+                    </td>
+
+                    <td>
+                        Articles, authors,
+                        categories, tags, views
+                    </td>
+
+                    <td>
+                        CSV
+                    </td>
+                </tr>
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</div>
+
+<div class="content-box content-lighten mt-4">
+
+    <h5 class="mb-3">
+        Export Summary
+    </h5>
+
+    <div class="alert alert-info">
+
+        <strong>Administrative Reporting</strong>
+
+        <hr>
+
+        <ul class="mb-0">
+
+            <li>
+                Download reports for audits and compliance reviews.
+            </li>
+
+            <li>
+                Analyse chatbot learning performance and FAQ effectiveness.
+            </li>
+
+            <li>
+                Monitor ticket resolution and support team productivity.
+            </li>
+
+            <li>
+                Maintain backups of FAQ and Knowledge Base content.
+            </li>
+
+        </ul>
+
+    </div>
+
+</div>
+
+{% endblock %}
