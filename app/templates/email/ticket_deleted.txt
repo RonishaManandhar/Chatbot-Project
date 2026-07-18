@@ -18,7 +18,7 @@ This ticket can no longer be viewed or reopened.
 If you still need assistance, create a new support request here:
 
 {{ url_for(
-    'customer.chat_page',
+    'customer.chat',
     _external=True
 ) }}
 

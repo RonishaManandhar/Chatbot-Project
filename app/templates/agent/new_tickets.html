@@ -5,39 +5,35 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-table/bootstrap-table.min.css') }}">
 
 <style>
-    .queue-hero {
-        background: #111827;
-        color: #ffffff;
-        border-radius: 16px;
-        padding: 22px;
-        margin-bottom: 18px;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.10);
-    }
-
-        .queue-hero h5 {
-            margin-bottom: 6px;
-            font-weight: 700;
-        }
-
-        .queue-hero p {
-            margin-bottom: 0;
-            color: #d1d5db;
-        }
-
+    /* Page-specific styles remain inside this template. */
     .queue-summary {
         display: flex;
-        gap: 12px;
         flex-wrap: wrap;
-        margin-top: 14px;
+        gap: 10px;
+        margin: 0 0 18px;
     }
 
     .queue-chip {
-        background: rgba(255,255,255,0.12);
-        color: #ffffff;
-        padding: 8px 12px;
+        display: inline-flex;
+        align-items: center;
+        min-height: 34px;
+        padding: 7px 12px;
+        border: 1px solid #dbe3ee;
         border-radius: 999px;
+        background: #f8fafc;
+        color: #334155;
         font-size: 13px;
         font-weight: 600;
+    }
+
+    .ticket-table-wrap {
+        width: 100%;
+        overflow-x: auto;
+    }
+
+    #ticketTable {
+        width: 100%;
+        min-width: 980px;
     }
 
     .status-pill {
@@ -111,11 +107,11 @@
 {% endblock %}
 
 {% block header %}
-    {% block title %}New Tickets{% endblock %}
+    {% block title %}Waiting Support Queue{% endblock %}
 {% endblock %}
 
 {% block text %}
-    Review customer tickets waiting for support and claim them when you are ready to help.
+    These are unassigned customer tickets. Claim a ticket to move it into your assigned work queue. This page refreshes automatically when new tickets arrive or ticket status changes.
 {% endblock %}
 
 {% block content %}
@@ -124,33 +120,13 @@
     {% include 'includes/alert.html' %}
 </div>
 
-<div class="max-w-1000">
-
-    <div class="queue-hero">
-        <h5>Waiting Support Queue</h5>
-        <p>
-            These are unassigned customer tickets. Claim a ticket to move it into your assigned work queue.
-            This page refreshes automatically when new tickets arrive or ticket status changes.
-        </p>
-
-        <div class="queue-summary">
-            <span class="queue-chip">
-                Waiting tickets: {{ tickets|length }}
-            </span>
-
-            <span class="queue-chip">
-                Live updates: On
-            </span>
-
-            <span class="queue-chip">
-                Agent action: Claim ticket
-            </span>
-        </div>
-    </div>
-
-</div>
-
 <div class="content-box mb-3 content-lighten max-w-1000">
+
+    <div class="queue-summary" aria-label="Queue summary">
+        <span class="queue-chip">Waiting tickets: {{ tickets|length }}</span>
+        <span class="queue-chip">Live updates: On</span>
+        <span class="queue-chip">Agent action: Claim ticket</span>
+    </div>
 
     <p class="table-note">
         Use the search box and filters to find urgent, high priority, or specific customer tickets quickly.
@@ -158,8 +134,10 @@
 
     {% if tickets %}
 
+    <div class="ticket-table-wrap">
+
     <table id="ticketTable"
-           class="table table-striped table-responsive-sm"
+           class="table table-striped"
            data-toggle="table"
            data-search="true"
            data-pagination="true"
@@ -295,6 +273,8 @@
         </tbody>
 
     </table>
+
+    </div>
 
     {% else %}
 

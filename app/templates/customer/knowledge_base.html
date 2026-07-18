@@ -10,24 +10,18 @@ Browse help articles and find answers without creating a support ticket.
 
 {% block content %}
 
-<div class="max-w-1000">
+<div class="knowledge-base-page">
+
     {% include 'includes/alert.html' %}
-</div>
 
 <style>
-
-    .help-banner {
-        background: linear-gradient(135deg, #2563eb, #3b82f6);
-        color: white;
-        border-radius: 20px;
-        padding: 30px;
-        margin-bottom: 24px;
+    /* This page is fully styled inside its own HTML template. */
+    .knowledge-base-page {
+        width: 100%;
+        max-width: 1500px;
+        margin: 0 auto;
     }
 
-        .help-banner h3 {
-            color: white;
-            margin-bottom: 10px;
-        }
 
     .search-box {
         background: #ffffff;
@@ -38,6 +32,8 @@ Browse help articles and find answers without creating a support ticket.
     }
 
     .article-card {
+        display: flex;
+        flex-direction: column;
         background: #ffffff;
         border: 1px solid #e5e7eb;
         border-radius: 18px;
@@ -60,21 +56,26 @@ Browse help articles and find answers without creating a support ticket.
         }
 
     .article-meta {
-        margin-top: 12px;
+        margin-top: auto;
+        padding-top: 12px;
+    }
+
+    .article-card h5,
+    .article-card p,
+    .article-meta {
+        overflow-wrap: anywhere;
+    }
+
+    @media (max-width: 767.98px) {
+        .search-box {
+            padding: 16px;
+        }
+
+        .article-card {
+            padding: 18px;
+        }
     }
 </style>
-
-<div class="help-banner">
-
-    <h3>
-        Knowledge Base
-    </h3>
-
-    <p class="mb-0">
-        Find answers, troubleshooting guides, and support articles.
-    </p>
-
-</div>
 
 <div class="search-box">
 
@@ -200,6 +201,8 @@ Browse help articles and find answers without creating a support ticket.
     </div>
 
     {% endif %}
+
+</div>
 
 </div>
 

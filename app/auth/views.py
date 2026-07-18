@@ -36,7 +36,6 @@ from app.models import (
     User
 )
 from app.services.email_service import (
-    send_login_otp_email,
     send_password_changed_email,
     send_password_reset_email,
     send_verification_email
@@ -439,60 +438,37 @@ def login():
                     )
                 )
 
-            # Save login information until OTP succeeds.
-            session["pending_login_user_id"] = user.id
-            session["pending_login_remember"] = bool(
-                form.remember.data
-            )
-
-            if next_url:
-                session["login_next_url"] = next_url
-            else:
-                session.pop(
-                    "login_next_url",
-                    None
-                )
-
-            login_code = create_verification_code(
-                user=user,
-                purpose="login"
-            )
-
-            email_sent = send_login_otp_email(
+            # Log the verified user in immediately.
+            # Login OTP is intentionally not required; OTP remains
+            # limited to new-account email verification.
+            login_user(
                 user,
-                login_code
+                remember=bool(form.remember.data)
             )
-
-            if not email_sent:
-                flash(
-                    "The email could not be sent. "
-                    "For local testing, use the OTP shown "
-                    "in the terminal.",
-                    "warning"
-                )
-
-                return redirect(
-                    url_for("auth.verify_login_otp")
-                )
 
             log_system_event(
-                event_type="Login OTP Sent",
+                event_type="Login Successful",
                 severity="Info",
                 message=(
-                    f"A login verification code was sent "
-                    f"to {user.email}."
+                    f"Successful password login for {user.email}."
                 ),
                 user_id=user.id
             )
 
             flash(
-                "A one-time login code has been sent "
-                "to your email.",
-                "primary"
+                "Login successful.",
+                "success"
             )
 
-            return redirect(
-                url_for("auth.verify_login_otp")
+            if next_url:
+                session.pop(
+                    "login_next_url",
+                    None
+                )
+                return redirect(next_url)
+
+            return redirect_user_to_dashboard(
+                user
             )
 
         # ----------------------------------------------------
@@ -571,207 +547,6 @@ def login():
     return render_template(
         "auth/login.html",
         form=form
-    )
-
-
-# ============================================================
-# VERIFY LOGIN OTP
-# ============================================================
-
-@auth_blueprint.route(
-    "/verify-login-otp",
-    methods=["GET", "POST"]
-)
-def verify_login_otp():
-    if current_user.is_authenticated:
-        return redirect_user_to_dashboard(
-            current_user
-        )
-
-    pending_user_id = session.get(
-        "pending_login_user_id"
-    )
-
-    if not pending_user_id:
-        flash(
-            "Your login verification session has expired. "
-            "Please log in again.",
-            "warning"
-        )
-
-        return redirect(
-            url_for("auth.login")
-        )
-
-    user = User.query.get(
-        pending_user_id
-    )
-
-    if not user:
-        session.pop(
-            "pending_login_user_id",
-            None
-        )
-        session.pop(
-            "pending_login_remember",
-            None
-        )
-        session.pop(
-            "login_next_url",
-            None
-        )
-
-        flash(
-            "The account could not be found.",
-            "danger"
-        )
-
-        return redirect(
-            url_for("auth.login")
-        )
-
-    if request.method == "POST":
-        submitted_code = request.form.get(
-            "code"
-        )
-
-        valid, message = validate_verification_code(
-            user=user,
-            submitted_code=submitted_code,
-            purpose="login"
-        )
-
-        if not valid:
-            flash(
-                message,
-                "danger"
-            )
-
-            return render_template(
-                "auth/login_otp.html",
-                user=user
-            )
-
-        remember_login = bool(
-            session.get(
-                "pending_login_remember",
-                False
-            )
-        )
-
-        login_user(
-            user,
-            remember=remember_login
-        )
-
-        next_url = session.pop(
-            "login_next_url",
-            None
-        )
-
-        session.pop(
-            "pending_login_user_id",
-            None
-        )
-        session.pop(
-            "pending_login_remember",
-            None
-        )
-
-        log_system_event(
-            event_type="Login Successful",
-            severity="Info",
-            message=(
-                f"Login OTP verified successfully "
-                f"for {user.email}."
-            ),
-            user_id=user.id
-        )
-
-        flash(
-            "Login verification successful.",
-            "success"
-        )
-
-        if (
-            next_url
-            and next_url.startswith("/")
-            and not next_url.startswith("//")
-        ):
-            return redirect(next_url)
-
-        return redirect_user_to_dashboard(
-            user
-        )
-
-    return render_template(
-        "auth/login_otp.html",
-        user=user
-    )
-
-
-# ============================================================
-# RESEND LOGIN OTP
-# ============================================================
-
-@auth_blueprint.route(
-    "/resend-login-otp",
-    methods=["POST"]
-)
-def resend_login_otp():
-    pending_user_id = session.get(
-        "pending_login_user_id"
-    )
-
-    if not pending_user_id:
-        flash(
-            "Your login verification session expired. "
-            "Please log in again.",
-            "warning"
-        )
-
-        return redirect(
-            url_for("auth.login")
-        )
-
-    user = User.query.get(
-        pending_user_id
-    )
-
-    if not user:
-        flash(
-            "The account could not be found.",
-            "danger"
-        )
-
-        return redirect(
-            url_for("auth.login")
-        )
-
-    code = create_verification_code(
-        user=user,
-        purpose="login"
-    )
-
-    email_sent = send_login_otp_email(
-        user,
-        code
-    )
-
-    if email_sent:
-        flash(
-            "A new login code was sent to your email.",
-            "success"
-        )
-    else:
-        flash(
-            "The login code could not be sent. "
-            "Please try again.",
-            "danger"
-        )
-
-    return redirect(
-        url_for("auth.verify_login_otp")
     )
 
 
@@ -1162,14 +937,6 @@ def resend_verification_email(user_id):
 def logout():
     logout_user()
 
-    session.pop(
-        "pending_login_user_id",
-        None
-    )
-    session.pop(
-        "pending_login_remember",
-        None
-    )
     session.pop(
         "pending_verification_user_id",
         None

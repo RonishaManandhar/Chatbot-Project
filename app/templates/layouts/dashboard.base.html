@@ -73,13 +73,13 @@
 
         {% include 'includes/sidebar.html' %}
 
-        <div class="content">
+        <main class="content app-content" id="main-content">
 
             {% include 'includes/navbar.html' %}
 
-            <div class="container-fluid">
+            <div class="container-fluid app-page-shell">
 
-                <div class="content-box mb-3 content-lighten max-w-1000">
+                <section class="content-box mb-3 content-lighten app-page-header">
 
                     <h3>{% block header %}{% endblock %}</h3>
 
@@ -87,15 +87,17 @@
 
                     {% block button %}{% endblock %}
 
-                </div>
+                </section>
 
-                {% block content %}{% endblock %}
+                <div class="app-page-content">
+                    {% block content %}{% endblock %}
+                </div>
 
                 {% include 'includes/footer.html' %}
 
             </div>
 
-        </div>
+        </main>
 
     </div>
 

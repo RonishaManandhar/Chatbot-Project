@@ -13,6 +13,7 @@
     let messageSendInProgress = false;
 
     let triageMode = false;
+    let aiConversationMode = false;
     let triageStep = 0;
     let triageQuestions = [];
 
@@ -832,6 +833,7 @@
         currentTicketClosed = false;
 
         triageMode = true;
+        aiConversationMode = false;
         triageStep = 0;
         triageData =
             createEmptyTriageData();
@@ -903,6 +905,90 @@
         supportInput.focus();
     }
 
+    function removeAiChatActions() {
+        const existing = document.getElementById(
+            "persistentAiChatActions"
+        );
+
+        if (existing) {
+            existing.remove();
+        }
+    }
+
+    function renderAiChatActions() {
+        removeAiChatActions();
+
+        if (!currentSessionId || currentTicketId) {
+            return;
+        }
+
+        const wrap = document.createElement("div");
+        wrap.id = "persistentAiChatActions";
+        wrap.className = "chat-row chat-left";
+
+        wrap.innerHTML = `
+            <div class="chat-bubble system-bubble">
+                <div class="support-mini-actions">
+                    <button
+                        type="button"
+                        class="support-mini-btn success"
+                        id="aiChatSolvedBtn">
+                        Issue solved
+                    </button>
+
+                    <button
+                        type="button"
+                        class="support-mini-btn danger"
+                        id="aiChatCreateTicketBtn">
+                        Create support ticket
+                    </button>
+                </div>
+            </div>
+        `;
+
+        supportMessages.appendChild(wrap);
+
+        wrap.querySelector(
+            "#aiChatSolvedBtn"
+        ).addEventListener(
+            "click",
+            async function () {
+                const response = await LiveChatCore
+                    .updateChatSessionState(
+                        currentSessionId,
+                        "awaiting_rating"
+                    );
+
+                if (
+                    !response.ok ||
+                    !response.data ||
+                    response.data.ok !== true
+                ) {
+                    addSystemMessage(
+                        "The chat could not be completed. Please try again.",
+                        false
+                    );
+                    return;
+                }
+
+                aiConversationMode = false;
+                removeAiChatActions();
+                showRatingBox();
+            }
+        );
+
+        wrap.querySelector(
+            "#aiChatCreateTicketBtn"
+        ).addEventListener(
+            "click",
+            createTriageTicket
+        );
+
+        LiveChatCore.scrollBottom(
+            supportMessages
+        );
+    }
+
     function renderResolutionPrompt() {
         if (
             document.getElementById(
@@ -929,7 +1015,7 @@
 
                 <div style="margin-top:8px;">
                     Choose Yes to rate and complete the chat.
-                    Choose No to create a support ticket.
+                    Choose No to continue chatting with the AI, or create a support ticket.
                 </div>
 
                 <div class="support-mini-actions">
@@ -942,9 +1028,16 @@
 
                     <button
                         type="button"
+                        class="support-mini-btn secondary"
+                        id="continueAiChatBtn">
+                        No, continue chatting
+                    </button>
+
+                    <button
+                        type="button"
                         class="support-mini-btn danger"
                         id="triageSolvedNoBtn">
-                        No, create support ticket
+                        Create support ticket
                     </button>
 
                     <button
@@ -978,6 +1071,42 @@
 
                 wrap.remove();
                 showRatingBox();
+            }
+        );
+
+        wrap.querySelector(
+            "#continueAiChatBtn"
+        ).addEventListener(
+            "click",
+            async function () {
+                const response =
+                    await LiveChatCore
+                        .updateChatSessionState(
+                            currentSessionId,
+                            "ai_chat"
+                        );
+
+                if (
+                    !response.ok ||
+                    !response.data ||
+                    response.data.ok !== true
+                ) {
+                    addSystemMessage(
+                        "The AI conversation could not be continued. Please try again.",
+                        false
+                    );
+                    return;
+                }
+
+                aiConversationMode = true;
+                triageMode = false;
+                wrap.remove();
+                setTextInputEnabled(true);
+                supportInput.placeholder =
+                    "Ask another question about this issue...";
+                renderAiChatActions();
+                supportInput.focus();
+                await loadHistory();
             }
         );
 
@@ -1232,6 +1361,7 @@
 
         currentTicketClosed = false;
         triageMode = false;
+        aiConversationMode = false;
 
         LiveChatCore.joinTicketRoom(
             currentTicketId
@@ -1367,6 +1497,72 @@
                     await requestTriageAnswer();
                 }
 
+                return;
+            }
+
+            if (aiConversationMode && !currentTicketId) {
+                addMessage(
+                    message,
+                    "right",
+                    "You",
+                    "normal",
+                    false
+                );
+
+                setInputDisabled(true);
+                addSystemMessage(
+                    "AI is preparing a response...",
+                    false
+                );
+
+                const response =
+                    await LiveChatCore.sendAiFollowUp(
+                        currentSessionId,
+                        message
+                    );
+
+                const waitingMessage =
+                    supportMessages.lastElementChild;
+
+                if (
+                    waitingMessage &&
+                    waitingMessage.textContent.includes(
+                        "AI is preparing a response..."
+                    )
+                ) {
+                    waitingMessage.remove();
+                }
+
+                if (
+                    !response.ok ||
+                    !response.data ||
+                    response.data.ok !== true
+                ) {
+                    addSystemMessage(
+                        response.data && response.data.message
+                            ? response.data.message
+                            : "AI could not answer. Please try again or create a support ticket.",
+                        false
+                    );
+                    setTextInputEnabled(true);
+                    supportInput.placeholder =
+                        "Ask another question about this issue...";
+                    return;
+                }
+
+                addSystemMessage(
+                    response.data.reply ||
+                    "No answer was generated.",
+                    true
+                );
+
+                aiConversationMode = true;
+                setTextInputEnabled(true);
+                supportInput.placeholder =
+                    "Ask another question about this issue...";
+                renderAiChatActions();
+                supportInput.focus();
+                await loadHistory();
                 return;
             }
 
@@ -1609,6 +1805,7 @@
             "triage";
 
         triageMode = false;
+        aiConversationMode = false;
 
         if (stage === "triage") {
             triageMode = true;
@@ -1629,6 +1826,17 @@
                 "Your answer is being processed. Please wait.",
                 false
             );
+        }
+
+        else if (
+            stage === "ai_chat"
+        ) {
+            aiConversationMode = true;
+            setTextInputEnabled(true);
+            supportInput.placeholder =
+                "Ask another question about this issue...";
+            renderAiChatActions();
+            supportInput.focus();
         }
 
         else if (

@@ -916,13 +916,52 @@ def create_ticket():
             author_id=current_user.id,
             owner_id=None,
             category_id=int(form.category.data),
-            priority_id=1,
+            priority_id=Priority.query.first().id,
             status_id=get_open_status_id(),
             orig_file=original_f,
             file_link=attachment
         )
 
         db.session.add(ticket)
+        db.session.flush()
+
+        manual_chat_session = ChatSession(
+            user_id=current_user.id,
+            ticket_id=ticket.id,
+            title=ticket.subject,
+            issue_type=(
+                ticket.category.category
+                if ticket.category
+                else "Manual Support Ticket"
+            ),
+            status="Open",
+            current_stage="ticket_created",
+            triage_step=0,
+            triage_data="{}",
+            triage_summary=(
+                "This support ticket was created manually "
+                "without AI triage."
+            )
+        )
+
+        db.session.add(manual_chat_session)
+        db.session.flush()
+
+        initial_message = ChatMessage(
+            user_id=current_user.id,
+            session_id=manual_chat_session.id,
+            ticket_id=ticket.id,
+            role="user",
+            message=ticket.body,
+            resolution_status="Active",
+            customer_visible=True,
+            faq_matched=False,
+            ai_used=False,
+            escalated=True,
+            guest_user=False
+        )
+
+        db.session.add(initial_message)
         db.session.commit()
 
         # ----------------------------------------------------
@@ -991,14 +1030,12 @@ def create_ticket():
             )
 
         return redirect(
-            url_for("customer.chat")
+            url_for("customer.my_tickets")
         )
 
     return render_template(
-        "customer/my_tickets.html",
-        form=form,
-        tickets=[],
-        active_ticket=None
+        "customer/create_ticket.html",
+        form=form
     )
 
 
@@ -1624,6 +1661,11 @@ def delete_ticket(uid, tid):
         # ----------------------------------------------------
         # DELETE DATABASE TICKET
         # ----------------------------------------------------
+        SystemEvent.query.filter_by(
+            related_ticket_id=ticket.id
+        ).delete(
+            synchronize_session=False
+        )
 
         db.session.delete(ticket)
         db.session.commit()
@@ -2760,6 +2802,7 @@ def api_update_chat_triage_progress(session_id):
         "triage",
         "processing_answer",
         "awaiting_resolution",
+        "ai_chat",
         "awaiting_rating",
         "ticket_created",
         "solved",
@@ -2843,6 +2886,7 @@ def api_update_chat_session_state(session_id):
         "triage",
         "processing_answer",
         "awaiting_resolution",
+        "ai_chat",
         "awaiting_rating",
         "ticket_created",
         "solved",
@@ -2859,6 +2903,7 @@ def api_update_chat_session_state(session_id):
         "triage": "Triage",
         "processing_answer": "Processing",
         "awaiting_resolution": "AI Answered",
+        "ai_chat": "AI Conversation",
         "awaiting_rating": "Awaiting Rating",
         "ticket_created": "Ticket Created",
         "solved": "Solved",
@@ -3110,6 +3155,181 @@ def api_chat_session_triage_answer(session_id):
             assistant_message
         )
     }), 200
+
+@csrf.exempt
+@customer_blueprint.route(
+    "/api/chat/session/<int:session_id>/ai-follow-up",
+    methods=["POST"]
+)
+@login_required(role="Customer")
+def api_chat_session_ai_follow_up(session_id):
+    chat_session = ChatSession.query.filter_by(
+        id=session_id,
+        user_id=current_user.id
+    ).first()
+
+    if not chat_session:
+        return jsonify({
+            "ok": False,
+            "reason": "session_not_found"
+        }), 404
+
+    if chat_session.ticket_id:
+        return jsonify({
+            "ok": False,
+            "reason": "ticket_already_created",
+            "message": (
+                "This conversation is now connected to a support ticket."
+            )
+        }), 400
+
+    if chat_session.current_stage not in {
+        "ai_chat",
+        "awaiting_resolution"
+    }:
+        return jsonify({
+            "ok": False,
+            "reason": "invalid_session_stage",
+            "message": (
+                "Choose 'No, continue with AI' before sending another message."
+            )
+        }), 400
+
+    data = request.get_json(silent=True) or {}
+    user_message = (data.get("message") or "").strip()
+
+    if not user_message:
+        return jsonify({
+            "ok": False,
+            "reason": "missing_message",
+            "message": "Please type a message first."
+        }), 400
+
+    chat_session.current_stage = "processing_answer"
+    chat_session.status = "Processing"
+    chat_session.updated_at = datetime.datetime.utcnow()
+
+    user_chat = ChatMessage(
+        user_id=current_user.id,
+        session_id=chat_session.id,
+        ticket_id=None,
+        role="user",
+        message=user_message,
+        ai_used=False,
+        faq_matched=False,
+        escalated=False,
+        guest_user=False,
+        customer_visible=True,
+        resolution_status="Pending"
+    )
+    db.session.add(user_chat)
+    db.session.commit()
+
+    recent_messages = (
+        ChatMessage.query
+        .filter(ChatMessage.session_id == chat_session.id)
+        .filter(ChatMessage.customer_visible == True)
+        .order_by(ChatMessage.created_at.desc())
+        .limit(12)
+        .all()
+    )
+    recent_messages.reverse()
+
+    conversation_context = "\n".join([
+        f"{message.role.upper()}: {message.message}"
+        for message in recent_messages
+        if message.message
+    ])
+
+    search_text = (
+        f"{chat_session.issue_type or ''}\n"
+        f"{user_message}"
+    )
+    related_faqs = find_related_faqs(
+        search_text,
+        issue_type=chat_session.issue_type,
+        limit=5
+    )
+    related_articles = find_related_knowledge_articles(
+        search_text,
+        issue_type=chat_session.issue_type,
+        limit=5
+    )
+
+    try:
+        ai_result = ask_chatgpt(
+            message=user_message,
+            triage_context=(
+                f"Original triage summary:\n"
+                f"{chat_session.triage_summary or ''}\n\n"
+                f"Recent conversation:\n"
+                f"{conversation_context}"
+            ),
+            faq_context=build_faq_context(related_faqs),
+            knowledge_context=build_knowledge_context(
+                related_articles
+            )
+        )
+
+        if ai_result.get("ok"):
+            ai_reply = (
+                ai_result.get("answer")
+                or "No AI answer was generated."
+            )
+        else:
+            ai_reply = (
+                "AI is temporarily unavailable. "
+                "You can try again or create a support ticket."
+            )
+
+    except Exception as error:
+        current_app.logger.exception(
+            "AI follow-up failed for session_id=%s: %s",
+            chat_session.id,
+            error
+        )
+        ai_reply = (
+            "AI is temporarily unavailable. "
+            "You can try again or create a support ticket."
+        )
+
+    assistant_chat = ChatMessage(
+        user_id=current_user.id,
+        session_id=chat_session.id,
+        ticket_id=None,
+        role="assistant",
+        message=ai_reply,
+        ai_used=True,
+        faq_matched=False,
+        escalated=False,
+        guest_user=False,
+        customer_visible=True,
+        resolution_status="Pending"
+    )
+    db.session.add(assistant_chat)
+
+    # Remain in continuous AI-chat mode after every follow-up.
+    # The full resolution question is shown only once, after the
+    # initial triage answer. The customer can now keep chatting
+    # until they choose Issue solved or Create support ticket.
+    chat_session.current_stage = "ai_chat"
+    chat_session.status = "AI Conversation"
+    chat_session.updated_at = datetime.datetime.utcnow()
+    db.session.commit()
+
+    emit_customer_refresh(
+        current_user.id,
+        "ai_follow_up_ready"
+    )
+
+    return jsonify({
+        "ok": True,
+        "reply": ai_reply,
+        "session": serialize_chat_session(chat_session),
+        "user_chat": serialize_chat_message(user_chat),
+        "chat": serialize_chat_message(assistant_chat)
+    }), 200
+
 
 @csrf.exempt
 @customer_blueprint.route("/api/chat/session/<int:session_id>/message", methods=["POST"])

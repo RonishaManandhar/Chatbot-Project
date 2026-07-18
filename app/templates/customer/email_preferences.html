@@ -4,14 +4,23 @@
 {{ super() }}
 
 <style>
+    /* Keep this page self-contained: all page CSS stays in this HTML file. */
     .email-preferences-container {
-        max-width: 900px;
+        width: 100%;
+        max-width: 1100px;
+        margin: 0 auto;
+    }
+
+    .email-preference-card {
+        width: 100%;
+        padding: 26px 28px;
     }
 
     .email-preference-card {
         border: 0;
-        border-radius: 12px;
+        border-radius: 14px;
         overflow: hidden;
+        box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
     }
 
     .email-preference-row {
@@ -56,10 +65,26 @@
         border-color: #e5e7eb;
     }
 
-    @media (max-width: 576px) {
+    @media (max-width: 768px) {
+        .email-preference-card {
+            padding: 22px 20px;
+        }
+
         .email-preference-row {
             align-items: flex-start;
-            gap: 15px;
+            gap: 18px;
+        }
+    }
+
+    @media (max-width: 576px) {
+        .email-preference-card {
+            padding: 18px 16px;
+        }
+
+        .email-preference-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 14px;
         }
     }
 </style>
@@ -116,7 +141,7 @@ Choose which optional email notifications you would like to receive.
                     </strong>
 
                     <p class="text-muted">
-                        Email verification, login verification codes,
+                        New-account email verification codes,
                         password-reset links, and password-change
                         confirmations.
                     </p>

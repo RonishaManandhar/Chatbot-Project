@@ -310,6 +310,18 @@ window.LiveChatCore = (function () {
         });
     }
 
+    function sendAiFollowUp(sessionId, message) {
+        return api(
+            `/customer/api/chat/session/${sessionId}/ai-follow-up`,
+            {
+                method: "POST",
+                body: JSON.stringify({
+                    message: message || ""
+                })
+            }
+        );
+    }
+
     function updateTriageProgress(
         sessionId,
         options = {}
@@ -602,6 +614,7 @@ window.LiveChatCore = (function () {
         deleteChatSession,
         saveChatSessionMessage,
         getTriageAnswer,
+        sendAiFollowUp,
         rateChatSession,
         rateTicket,
 

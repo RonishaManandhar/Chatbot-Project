@@ -1,134 +1,125 @@
-﻿<nav class="navbar navbar-expand-lg fixed-top navbar-lighten">
-
-    <a class="navbar-brand navbar-link" href="javascript:void(0)">
-        chatbot
-    </a>
-
-    <span class="navbar-text">
-        <a href="javascript:void(0)" id="sidebar-toggle" class="navbar-bars">
-            <i class="fa fa-bars"></i>
+<nav class="navbar fixed-top navbar-lighten app-navbar" aria-label="Primary navigation">
+    <div class="app-navbar-left">
+        <a class="navbar-brand navbar-link" href="javascript:void(0)" aria-label="Chatbot home">
+            chatbot
         </a>
-    </span>
 
-    <div class="collapse navbar-collapse">
+        <button type="button"
+                id="sidebar-toggle"
+                class="navbar-bars app-navbar-icon-button"
+                aria-label="Toggle sidebar"
+                aria-controls="sidebar"
+                aria-expanded="true">
+            <i class="fa fa-bars" aria-hidden="true"></i>
+        </button>
+    </div>
 
-        <div class="dropdown ml-auto mr-4" style="position:relative;">
-
-            <a href="javascript:void(0)"
-               class="dropdown-link position-relative"
-               data-toggle="dropdown"
-               aria-haspopup="true"
-               aria-expanded="false">
-
-                <i class="fa fa-bell fa-lg"></i>
+    <div class="app-navbar-actions">
+        <div class="dropdown app-notification-dropdown">
+            <button type="button"
+                    class="dropdown-link app-navbar-icon-button app-notification-toggle"
+                    data-toggle="dropdown"
+                    aria-haspopup="true"
+                    aria-expanded="false"
+                    aria-label="Open notifications">
+                <i class="fa fa-bell fa-lg" aria-hidden="true"></i>
 
                 <span id="liveNotificationBadge"
-                      class="badge badge-danger"
-                      style="position:absolute; top:-10px; right:-12px; font-size:10px; min-width:18px; height:18px; line-height:12px; border-radius:50%; padding:3px; {% if notifications|length == 0 %}display:none;{% endif %}">
+                      class="badge badge-danger app-notification-badge{% if notifications|length == 0 %} d-none{% endif %}">
                     {{ notifications|length }}
                 </span>
-            </a>
+            </button>
 
-            <div class="dropdown-menu dropdown-menu-right p-0"
-                 style="width:350px; max-height:500px; overflow-y:auto;">
-
-                <div class="p-3 border-bottom">
+            <div class="dropdown-menu dropdown-menu-right p-0 app-notification-menu">
+                <div class="app-dropdown-header">
                     <strong>Notifications</strong>
+                    <span class="text-muted small">Latest updates</span>
                 </div>
 
-                <div id="liveNotificationList">
-
+                <div id="liveNotificationList" class="app-notification-list">
                     {% if notifications %}
+                        {% for notification in notifications[:10] %}
+                            <a href="{% if current_user.role == 'Administrator' %}{{ url_for('admin.open_notification', nid=notification.id) }}{% elif current_user.role == 'Agent' %}{{ url_for('agent.open_notification', nid=notification.id) }}{% else %}{{ url_for('customer.open_notification', nid=notification.id) }}{% endif %}"
+                               class="dropdown-item app-notification-item"
+                               data-notification-id="{{ notification.id }}">
+                                <div class="app-notification-message">
+                                    <strong>
+                                        {% if notification.sender %}
+                                            {{ notification.sender.name }}
+                                        {% else %}
+                                            System
+                                        {% endif %}
+                                    </strong>
+                                    {{ notification.message }}
+                                </div>
 
-                    {% for notification in notifications[:10] %}
-
-                    <a href="{% if current_user.role == 'Administrator' %}{{ url_for('admin.open_notification', nid=notification.id) }}{% elif current_user.role == 'Agent' %}{{ url_for('agent.open_notification', nid=notification.id) }}{% else %}{{ url_for('customer.open_notification', nid=notification.id) }}{% endif %}"
-                       class="dropdown-item border-bottom py-3"
-                       data-notification-id="{{ notification.id }}">
-
-                        <div style="font-size:13px;">
-                            <strong>
-                                {% if notification.sender %}
-                                {{ notification.sender.name }}
-                                {% else %}
-                                System
-                                {% endif %}
-                            </strong>
-                            {{ notification.message }}
-                        </div>
-
-                        <small class="text-muted">
-                            {% if notification.ticket_notification %}
-                            Ticket #{{ notification.ticket_notification.number }}
-                            {% elif notification.agent_report_id %}
-                            Agent Report #{{ notification.agent_report_id }}
-                            {% elif notification.title %}
-                            {{ notification.title }}
-                            {% else %}
-                            General notification
-                            {% endif %}
-                        </small>
-                    </a>
-                    {% endfor %}
-
+                                <small class="text-muted app-notification-meta">
+                                    {% if notification.ticket_notification %}
+                                        Ticket #{{ notification.ticket_notification.number }}
+                                    {% elif notification.agent_report_id %}
+                                        Agent Report #{{ notification.agent_report_id }}
+                                    {% elif notification.title %}
+                                        {{ notification.title }}
+                                    {% else %}
+                                        General notification
+                                    {% endif %}
+                                </small>
+                            </a>
+                        {% endfor %}
                     {% else %}
-
-                    <div id="emptyNotificationText" class="p-3 text-center text-muted">
-                        No notifications
-                    </div>
-
+                        <div id="emptyNotificationText" class="app-dropdown-empty">
+                            <i class="fa fa-bell-o" aria-hidden="true"></i>
+                            <span>No notifications</span>
+                        </div>
                     {% endif %}
-
                 </div>
 
-                <div class="p-2 border-top text-center">
+                <div class="app-dropdown-footer">
                     <a href="{% if current_user.role == 'Administrator' %}{{ url_for('admin.notifications') }}{% elif current_user.role == 'Agent' %}{{ url_for('agent.notifications') }}{% else %}{{ url_for('customer.notifications') }}{% endif %}">
                         View all notifications
                     </a>
                 </div>
-
             </div>
         </div>
 
-        <div class="dropdown dropdown-logged dropdown-logged-lighten">
-
-            <a href="javascript:void(0)"
-               data-toggle="dropdown"
-               class="dropdown-logged-toggle dropdown-link">
-
-                <span class="dropdown-user float-left">
+        <div class="dropdown dropdown-logged dropdown-logged-lighten app-user-dropdown">
+            <button type="button"
+                    class="dropdown-logged-toggle dropdown-link app-user-toggle"
+                    data-toggle="dropdown"
+                    aria-haspopup="true"
+                    aria-expanded="false">
+                <span class="dropdown-user" title="{{ current_user.name }}">
                     {{ current_user.name }}
                 </span>
-            </a>
+                <i class="fa fa-chevron-down app-user-chevron" aria-hidden="true"></i>
+            </button>
 
-            <div class="dropdown-menu dropdown-logged-menu dropdown-menu-right border-0 dropdown-menu-lighten">
-
-                <div class="dropdown-menu-arrow"></div>
+            <div class="dropdown-menu dropdown-menu-right border-0 dropdown-menu-lighten app-user-menu">
+                <div class="app-user-menu-header">
+                    <strong>{{ current_user.name }}</strong>
+                    <small>{{ current_user.role }}</small>
+                </div>
 
                 <a class="dropdown-item dropdown-logged-item"
                    href="{% if current_user.role == 'Administrator' %}{{ url_for('admin.my_profile') }}{% elif current_user.role == 'Agent' %}{{ url_for('agent.my_profile') }}{% else %}{{ url_for('customer.my_profile') }}{% endif %}">
-
-                    <i class="fa fa-user-o"></i>
+                    <i class="fa fa-user-o" aria-hidden="true"></i>
                     Your profile
                 </a>
 
                 <a class="dropdown-item dropdown-logged-item"
                    href="{% if current_user.role == 'Administrator' %}{{ url_for('admin.change_password') }}{% elif current_user.role == 'Agent' %}{{ url_for('agent.change_password') }}{% else %}{{ url_for('customer.change_password') }}{% endif %}">
-
-                    <i class="fa fa-key"></i>
+                    <i class="fa fa-key" aria-hidden="true"></i>
                     Change password
                 </a>
 
-                <div class="dropdown-divider border-light"></div>
+                <div class="dropdown-divider"></div>
 
-                <a class="dropdown-item dropdown-logged-item" href="{{ url_for('auth.logout') }}">
-                    <i class="fa fa-sign-out"></i>
+                <a class="dropdown-item dropdown-logged-item app-logout-item" href="{{ url_for('auth.logout') }}">
+                    <i class="fa fa-sign-out" aria-hidden="true"></i>
                     Logout
                 </a>
-
             </div>
         </div>
-
     </div>
 </nav>
 

@@ -567,3 +567,529 @@ body {
 .table thead th {
   border-bottom: 0px solid #dee2e6;
 }
+/* ============================================================
+   2026 RESPONSIVE LAYOUT FOUNDATION
+   Applied across Customer, Agent and Administrator dashboards.
+   ============================================================ */
+
+:root {
+  --app-navbar-height: 64px;
+  --app-sidebar-width: 272px;
+  --app-page-max-width: 1680px;
+  --app-page-gutter: clamp(16px, 2vw, 32px);
+  --app-card-radius: 10px;
+  --app-card-border: #e8edf3;
+  --app-card-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
+  --app-text: #273142;
+  --app-muted: #718096;
+  --app-surface: #ffffff;
+  --app-background: #f5f7fa;
+  --app-primary: #0d6efd;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body.body {
+  margin-top: var(--app-navbar-height);
+  background: var(--app-background);
+  color: var(--app-text);
+}
+
+#wrapper {
+  width: 100%;
+  min-height: calc(100vh - var(--app-navbar-height));
+  align-items: stretch;
+}
+
+.app-content {
+  min-width: 0;
+  width: 100%;
+  flex: 1 1 auto;
+}
+
+.app-page-shell {
+  width: 100%;
+  max-width: var(--app-page-max-width);
+  margin: 0 auto;
+  padding: 24px var(--app-page-gutter) 0;
+}
+
+.app-page-content {
+  width: 100%;
+  min-width: 0;
+}
+
+.app-page-header {
+  width: 100%;
+  max-width: none;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 20px 24px;
+  border: 1px solid var(--app-card-border);
+  border-radius: var(--app-card-radius);
+  box-shadow: var(--app-card-shadow);
+}
+
+.app-page-header h3 {
+  margin: 0;
+  color: var(--app-text);
+  font-size: clamp(1.35rem, 2vw, 1.75rem);
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.app-page-header p {
+  margin: 6px 0 0;
+  line-height: 1.55;
+}
+
+.app-page-header > a,
+.app-page-header > button,
+.app-page-header > form {
+  margin-top: 12px;
+}
+
+.content-box {
+  border: 1px solid var(--app-card-border);
+  border-radius: var(--app-card-radius);
+  box-shadow: var(--app-card-shadow);
+}
+
+/* Existing max-width helpers remain centred but no longer make table pages tiny. */
+.max-w-1000 {
+  width: 100%;
+  max-width: 1480px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.max-w-800 {
+  width: 100%;
+  max-width: 860px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Prevent Bootstrap rows from producing horizontal page overflow. */
+.app-page-content > .row,
+.app-page-header > .row {
+  margin-left: -8px;
+  margin-right: -8px;
+}
+
+.app-page-content > .row > [class*="col-"],
+.app-page-header > .row > [class*="col-"] {
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+/* Tables use available width and scroll only when genuinely necessary. */
+.table-responsive,
+.bootstrap-table,
+.fixed-table-container,
+.fixed-table-body {
+  width: 100%;
+  max-width: 100%;
+}
+
+.table-responsive {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table {
+  width: 100%;
+  margin-bottom: 0;
+}
+
+.table th,
+.table td {
+  vertical-align: middle;
+}
+
+.table thead th {
+  white-space: nowrap;
+}
+
+/* ============================================================
+   TOP NAVIGATION
+   ============================================================ */
+
+.app-navbar {
+  min-height: var(--app-navbar-height);
+  height: var(--app-navbar-height);
+  padding: 0 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #e6ebf1;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 1px 8px rgba(15, 23, 42, 0.05);
+  z-index: 1040;
+}
+
+.app-navbar-left,
+.app-navbar-actions {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.app-navbar-left {
+  gap: 8px;
+}
+
+.app-navbar-actions {
+  margin-left: auto;
+  gap: 10px;
+}
+
+.app-navbar .navbar-brand {
+  margin: 0;
+  padding: 0;
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.app-navbar-icon-button,
+.app-user-toggle {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: #334155;
+  cursor: pointer;
+  outline: none;
+}
+
+.app-navbar-icon-button {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.app-navbar-icon-button:hover,
+.app-navbar-icon-button:focus,
+.app-user-toggle:hover,
+.app-user-toggle:focus {
+  background: #eef3f8;
+  color: #0f172a;
+  text-decoration: none;
+}
+
+.navbar-bars {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.app-notification-badge {
+  position: absolute;
+  top: 2px;
+  right: 1px;
+  min-width: 18px;
+  height: 18px;
+  padding: 2px 5px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 12px;
+  text-align: center;
+}
+
+.app-notification-menu {
+  width: min(380px, calc(100vw - 24px));
+  max-height: min(560px, calc(100vh - 86px));
+  margin-top: 10px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 14px 35px rgba(15, 23, 42, 0.16);
+}
+
+.app-dropdown-header,
+.app-dropdown-footer {
+  padding: 14px 16px;
+  background: #fff;
+}
+
+.app-dropdown-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  border-bottom: 1px solid #edf1f5;
+}
+
+.app-dropdown-footer {
+  border-top: 1px solid #edf1f5;
+  text-align: center;
+}
+
+.app-notification-list {
+  max-height: 410px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.app-notification-item {
+  display: block;
+  padding: 13px 16px;
+  white-space: normal;
+  border-bottom: 1px solid #f0f3f6;
+  color: #334155;
+}
+
+.app-notification-item:last-child {
+  border-bottom: 0;
+}
+
+.app-notification-item:hover,
+.app-notification-item:focus {
+  background: #f7faff;
+  color: #1e293b;
+}
+
+.app-notification-message {
+  font-size: 0.82rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.app-notification-meta {
+  display: block;
+  margin-top: 5px;
+  line-height: 1.35;
+}
+
+.app-dropdown-empty {
+  min-height: 150px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #94a3b8;
+  text-align: center;
+}
+
+.app-dropdown-empty .fa {
+  font-size: 1.5rem;
+}
+
+.app-user-toggle {
+  max-width: 220px;
+  min-height: 40px;
+  padding: 0 10px 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 9px;
+}
+
+.dropdown-user {
+  min-width: 0;
+  max-width: 160px;
+  margin: 0;
+  overflow: hidden;
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dropdown-logged-toggle:before {
+  display: none;
+}
+
+.app-user-chevron {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  opacity: 0.55;
+  transition: transform 0.15s ease;
+}
+
+.app-user-dropdown.show .app-user-chevron {
+  transform: rotate(180deg);
+}
+
+.app-user-menu {
+  top: auto;
+  width: 235px;
+  margin-top: 10px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 14px 35px rgba(15, 23, 42, 0.16);
+}
+
+.app-user-menu-header {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid #edf1f5;
+  background: #f8fafc;
+}
+
+.app-user-menu-header strong,
+.app-user-menu-header small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-user-menu-header small {
+  margin-top: 3px;
+  color: #64748b;
+}
+
+.app-user-menu .dropdown-logged-item {
+  padding: 11px 16px;
+  background: #fff;
+}
+
+.app-user-menu .dropdown-logged-item:hover,
+.app-user-menu .dropdown-logged-item:focus {
+  background: #f4f7fb;
+}
+
+.app-user-menu .app-logout-item {
+  color: #c53030;
+}
+
+.app-user-menu .app-logout-item:hover,
+.app-user-menu .app-logout-item:focus {
+  background: #fff5f5;
+  color: #a61b1b;
+}
+
+/* ============================================================
+   SIDEBAR AND RESPONSIVE BEHAVIOUR
+   ============================================================ */
+
+.sidebar-menu {
+  width: var(--app-sidebar-width);
+}
+
+.sidebar {
+  flex: 0 0 var(--app-sidebar-width);
+  min-height: calc(100vh - var(--app-navbar-height));
+}
+
+@media (max-width: 991.98px) {
+  .app-navbar {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .app-page-shell {
+    padding-top: 18px;
+  }
+
+  .app-user-toggle {
+    max-width: 170px;
+  }
+
+  .dropdown-user {
+    max-width: 110px;
+  }
+}
+
+@media (max-width: 767.98px) {
+  body.body {
+    margin-top: 58px;
+  }
+
+  :root {
+    --app-navbar-height: 58px;
+  }
+
+  .app-page-shell {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .app-page-header {
+    padding: 17px 16px;
+  }
+
+  .content-box {
+    padding: 16px;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: var(--app-navbar-height);
+    bottom: 0;
+    left: 0;
+    z-index: 1035;
+    margin-left: calc(-1 * var(--app-sidebar-width));
+    overflow-y: auto;
+    box-shadow: 10px 0 28px rgba(15, 23, 42, 0.18);
+  }
+
+  .sidebar-toggle .sidebar {
+    margin-left: 0;
+  }
+
+  .app-navbar .navbar-brand {
+    font-size: 0.98rem;
+  }
+
+  .app-navbar-actions {
+    gap: 4px;
+  }
+
+  .app-user-toggle {
+    width: 40px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .dropdown-user {
+    display: none;
+  }
+
+  .app-user-chevron {
+    font-size: 0.8rem;
+  }
+
+  .app-notification-menu,
+  .app-user-menu {
+    position: fixed !important;
+    top: calc(var(--app-navbar-height) + 6px) !important;
+    right: 8px !important;
+    left: auto !important;
+    transform: none !important;
+  }
+
+  .app-notification-menu {
+    width: calc(100vw - 16px);
+  }
+
+  .app-user-menu {
+    width: min(260px, calc(100vw - 16px));
+  }
+}
+
+@media (max-width: 575.98px) {
+  .app-page-header h3 {
+    font-size: 1.3rem;
+  }
+
+  .table th,
+  .table td {
+    padding: 0.65rem 0.55rem;
+  }
+}
