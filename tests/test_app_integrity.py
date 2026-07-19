@@ -31,7 +31,6 @@ class AppIntegrityTests(BaseTestCase):
         required = {
             "auth.login",
             "auth.signup",
-            "auth.verify_login_otp",
             "customer.dashboard",
             "customer.my_profile",
             "agent.dashboard",

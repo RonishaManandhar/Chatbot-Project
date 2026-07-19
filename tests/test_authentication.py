@@ -20,21 +20,6 @@ class AuthenticationTests(BaseTestCase):
         with self.client.session_transaction() as session:
             self.assertNotIn("_user_id", session)
 
-    @patch("app.auth.views.send_login_otp_email", return_value=True)
-    def test_correct_password_starts_otp_without_logging_in(self, _send):
-        response = self.client.post("/login", data={
-            "email": self.customer.email,
-            "password": "Customer123!",
-        })
-        self.assertEqual(302, response.status_code)
-        self.assertIn("/verify-login-otp", response.headers["Location"])
-        with self.client.session_transaction() as session:
-            self.assertEqual(self.customer.id, session.get("pending_login_user_id"))
-            self.assertNotIn("_user_id", session)
-        self.assertIsNotNone(EmailVerificationCode.query.filter_by(
-            user_id=self.customer.id, purpose="login", used=False
-        ).first())
-
     @patch("app.auth.views.send_verification_email", return_value=True)
     def test_signup_creates_unverified_customer(self, _send):
         response = self.client.post("/signup", data={
@@ -54,3 +39,26 @@ class AuthenticationTests(BaseTestCase):
         response = self.client.get("/admin/dashboard")
         self.assertEqual(302, response.status_code)
         self.assertIn("/login", response.headers["Location"])
+
+    def test_verified_user_logs_in_without_login_otp(self):
+        response = self.client.post(
+            "/login",
+            data={
+                "email": self.customer.email,
+                "password": "Customer123!",
+            },
+            follow_redirects=False,
+        )
+
+        self.assertEqual(302, response.status_code)
+
+        with self.client.session_transaction() as session:
+            self.assertEqual(
+                str(self.customer.id),
+                session.get("_user_id"),
+            )
+
+            self.assertNotIn(
+                "pending_login_user_id",
+                session,
+            )

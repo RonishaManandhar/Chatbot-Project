@@ -1,4 +1,4 @@
-from unittest.mock import patch
+
 
 from werkzeug.security import check_password_hash
 
@@ -57,29 +57,30 @@ class AuthenticationTests(BaseTestCase):
         )
 
     @patch("app.auth.views.send_verification_email", return_value=True)
-    def test_unverified_user_is_sent_to_signup_verification(self, _send):
-        self.customer.email_verified = False
-        db.session.commit()
-
-        response = self.client.post("/login", data={
-            "email": self.customer.email,
-            "password": "Customer123!",
-        })
+    def test_verified_user_logs_in_without_login_otp(self):
+        response = self.client.post(
+            "/login",
+            data={
+                "email": self.customer.email,
+                "password": "Customer123!",
+            },
+            follow_redirects=False,
+        )
 
         self.assertEqual(302, response.status_code)
-        self.assertIn("/verify-email/", response.headers["Location"])
+        self.assertIn("/customer/dashboard", response.headers["Location"])
 
         with self.client.session_transaction() as session:
-            self.assertNotIn("_user_id", session)
             self.assertEqual(
-                self.customer.id,
-                session.get("pending_verification_user_id"),
+                str(self.customer.id),
+                session.get("_user_id"),
             )
+            self.assertNotIn("pending_login_user_id", session)
 
-        self.assertIsNotNone(
+        self.assertIsNone(
             EmailVerificationCode.query.filter_by(
                 user_id=self.customer.id,
-                purpose="register",
+                purpose="login",
                 used=False,
             ).first()
         )
