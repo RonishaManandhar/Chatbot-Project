@@ -1177,42 +1177,113 @@ def claim_ticket(id):
     ticket = Ticket.query.get_or_404(id)
 
     if ticket.owner_id is not None:
-        flash("This ticket has already been claimed by another support staff.", "warning")
-        return redirect(url_for("admin.view_ticket", id=id))
-
-    ticket.owner_id = current_user.id
-    ticket.unassigned_15min_sent = False
-    ticket.unassigned_30min_sent = False
-
-    if ticket.status_id == get_open_status_id():
-        ticket.status_id = get_pending_status_id()
-
-    join_message = f"Support admin {current_user.name} has joined the chat."
-
-    comment = Comment(
-        comment=join_message,
-        author_id=current_user.id,
-        ticket_id=ticket.id
-    )
-
-    db.session.add(comment)
-    db.session.commit()
-    if ticket.author:
-
-        send_ticket_assigned_email(
-            ticket.author,
-            ticket,
-            current_user
+        flash(
+            "This ticket has already been claimed by another support staff.",
+            "warning"
+        )
+        return redirect(
+            url_for(
+                "admin.view_ticket",
+                id=id
+            )
         )
 
-    notify_customer(ticket, "joined your support ticket")
+    try:
+        ticket.owner_id = current_user.id
+        ticket.unassigned_15min_sent = False
+        ticket.unassigned_30min_sent = False
 
-    emit_comment(ticket, comment, is_attachment=False)
-    emit_ticket_event(ticket, "agent_joined", join_message)
+        if ticket.status_id == get_open_status_id():
+            ticket.status_id = get_pending_status_id()
 
-    flash("You have joined this ticket.", "primary")
-    return redirect(url_for("admin.view_ticket", id=id))
+        join_message = (
+            f"Support admin {current_user.name} has joined the chat."
+        )
 
+        comment = Comment(
+            comment=join_message,
+            author_id=current_user.id,
+            ticket_id=ticket.id
+        )
+
+        db.session.add(comment)
+        db.session.commit()
+
+    except Exception:
+        db.session.rollback()
+
+        current_app.logger.exception(
+            "Admin failed to claim ticket %s",
+            ticket.id
+        )
+
+        flash(
+            "The ticket could not be claimed.",
+            "danger"
+        )
+
+        return redirect(
+            url_for(
+                "admin.view_ticket",
+                id=id
+            )
+        )
+
+    if ticket.author:
+        try:
+            send_ticket_assigned_email(
+                ticket.author,
+                ticket
+            )
+
+        except Exception:
+            current_app.logger.exception(
+                "Ticket assignment email failed for ticket %s",
+                ticket.id
+            )
+
+    try:
+        notify_customer(
+            ticket,
+            "joined your support ticket"
+        )
+
+    except Exception:
+        current_app.logger.exception(
+            "Customer notification failed for ticket %s",
+            ticket.id
+        )
+
+    try:
+        emit_comment(
+            ticket,
+            comment,
+            is_attachment=False
+        )
+
+        emit_ticket_event(
+            ticket,
+            "agent_joined",
+            join_message
+        )
+
+    except Exception:
+        current_app.logger.exception(
+            "Socket.IO update failed for ticket %s",
+            ticket.id
+        )
+
+    flash(
+        "You have joined this ticket.",
+        "primary"
+    )
+
+    return redirect(
+        url_for(
+            "admin.view_ticket",
+            id=id
+        )
+    )
 
 @admin_blueprint.route(
     "/create-ticket",

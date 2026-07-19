@@ -214,13 +214,6 @@
                         <ul class="list-unstyled list-hidden">
 
                             <li>
-                                <a href="{{ url_for('admin.closed_ticket_knowledge') }}" class="list-link">
-                                    <span class="list-icon"><i class="fa fa-check-square-o"></i></span>
-                                    Resolved Ticket Library
-                                </a>
-                            </li>
-
-                            <li>
                                 <a href="{{ url_for('admin.agent_solution_library') }}" class="list-link">
                                     <span class="list-icon"><i class="fa fa-lightbulb-o"></i></span>
                                     Internal Solution Library
@@ -563,7 +556,7 @@
                             <li>
                                 <a href="{{ url_for('agent.contribution_statistics') }}" class="list-link">
                                     <span class="list-icon"><i class="fa fa-bar-chart"></i></span>
-                                    My Contribution Statistics
+                                    Contribution Stats
                                 </a>
                             </li>
 
@@ -577,7 +570,7 @@
                             <li>
                                 <a href="{{ url_for('agent.knowledge_contributions') }}" class="list-link">
                                     <span class="list-icon"><i class="fa fa-graduation-cap"></i></span>
-                                    Knowledge Contributions
+                                    Knowledge Ideas
                                     <span id="sidebarAgentKnowledgeContributionBadge"
                                           class="badge badge-pill badge-info float-right"
                                           style="{% if agent_my_pending_solution_count == 0 %}display:none;{% endif %}">
